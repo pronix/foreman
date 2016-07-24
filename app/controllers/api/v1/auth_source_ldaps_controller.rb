@@ -1,8 +1,7 @@
 module Api
   module V1
     class AuthSourceLdapsController < V1::BaseController
-
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/auth_source_ldaps/", "List all authsource ldaps"
       param :page, String, :desc => "paginate results"
@@ -30,7 +29,9 @@ module Api
         param :attr_firstname, String, :desc => "required if onthefly_register is true"
         param :attr_lastname, String, :desc => "required if onthefly_register is true"
         param :attr_mail, String, :desc => "required if onthefly_register is true"
+        param :attr_photo, String
         param :onthefly_register, :bool
+        param :usergroup_sync, :bool, :desc => N_("sync external user groups on login")
         param :tls, :bool
       end
 
@@ -52,7 +53,9 @@ module Api
         param :attr_firstname, String, :desc => "required if onthefly_register is true"
         param :attr_lastname, String, :desc => "required if onthefly_register is true"
         param :attr_mail, String, :desc => "required if onthefly_register is true"
+        param :attr_photo, String
         param :onthefly_register, :bool
+        param :usergroup_sync, :bool, :desc => N_("sync external user groups on login")
         param :tls, :bool
       end
 
@@ -66,7 +69,6 @@ module Api
       def destroy
         process_response @auth_source_ldap.destroy
       end
-
     end
   end
 end

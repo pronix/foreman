@@ -1,80 +1,87 @@
 module Api
   module V2
     class SmartProxiesController < V2::BaseController
-
       include Api::Version2
       include Api::TaxonomyScope
       include Api::ImportPuppetclassesCommonController
-      before_filter :find_resource, :only => %w{show update destroy refresh}
-      before_filter :check_feature_type, :only => :index
+      before_action :find_resource, :only => %w{show update destroy refresh version logs}
 
-      api :GET, "/smart_proxies/", "List all smart_proxies."
-      param :type, String, :desc => "filter by type"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/smart_proxies/", N_("List all smart proxies")
+      param_group :taxonomy_scope, ::Api::V2::BaseController
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @smart_proxies = proxies_by_type(params[:type]).paginate(paginate_options)
+        @smart_proxies = resource_scope_for_index.includes(:features)
       end
 
-      api :GET, "/smart_proxies/:id/", "Show a smart proxy."
+      api :GET, "/smart_proxies/:id/", N_("Show a smart proxy")
       param :id, :identifier, :required => true
 
       def show
       end
 
-      api :POST, "/smart_proxies/", "Create a smart proxy."
-      param :smart_proxy, Hash, :required => true do
-        param :name, String, :required => true
-        param :url, String, :required => true
+      def_param_group :smart_proxy do
+        param :smart_proxy, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true
+          param :url, String, :required => true
+          param_group :taxonomies, ::Api::V2::BaseController
+        end
       end
+
+      api :POST, "/smart_proxies/", N_("Create a smart proxy")
+      param_group :smart_proxy, :as => :create
 
       def create
         @smart_proxy = SmartProxy.new(params[:smart_proxy])
         process_response @smart_proxy.save
       end
 
-      api :PUT, "/smart_proxies/:id/", "Update a smart proxy."
+      api :PUT, "/smart_proxies/:id/", N_("Update a smart proxy")
       param :id, String, :required => true
-      param :smart_proxy, Hash, :required => true do
-        param :name, String
-        param :url, String
-      end
+      param_group :smart_proxy
 
       def update
         process_response @smart_proxy.update_attributes(params[:smart_proxy])
       end
 
-      api :DELETE, "/smart_proxies/:id/", "Delete a smart_proxy."
+      api :DELETE, "/smart_proxies/:id/", N_("Delete a smart proxy")
       param :id, String, :required => true
 
       def destroy
         process_response @smart_proxy.destroy
       end
 
-      api :PUT, "/smart_proxies/:id/refresh", "Refresh smart proxy features"
+      api :PUT, "/smart_proxies/:id/refresh", N_("Refresh smart proxy features")
       param :id, String, :required => true
 
       def refresh
         process_response @smart_proxy.refresh.blank? && @smart_proxy.save
       end
 
-      private
-      def proxies_by_type(type)
-        return SmartProxy.includes(:features).try(type.downcase+"_proxies") if not type.nil?
-        return SmartProxy.includes(:features).all
+      def version
+        render :version, :locals => {:success => true, :result => @smart_proxy.statuses[:version].version}
+      rescue Foreman::Exception => e
+        render_error :custom_error, :status => :unprocessable_entity, :locals => {:message => e.message}
       end
 
-      def check_feature_type
-        return if params[:type].nil?
+      def logs
+        render :logs, :locals => {:success => true, :result => @smart_proxy.statuses[:logs].logs}
+      rescue Foreman::Exception => e
+        render_error :custom_error, :status => :unprocessable_entity, :locals => {:message => e.message}
+      end
 
-        allowed_types = Feature.name_map.keys
+      private
 
-        if not allowed_types.include? params[:type].downcase
-          raise ArgumentError, "Invalid feature type. Select one of: #{allowed_types.join(", ")}."
+      def action_permission
+        case params[:action]
+        when 'refresh'
+          :edit
+        when 'version', 'logs'
+          :view
+        else
+          super
         end
       end
-
     end
   end
 end

@@ -1,17 +1,17 @@
 class ComputeResourcesController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
-  AJAX_REQUESTS = %w{hardware_profile_selected cluster_selected}
-  before_filter :ajax_request, :only => AJAX_REQUESTS
-  before_filter :find_by_id, :only => [:show, :edit, :update, :destroy, :ping, :associate] + AJAX_REQUESTS
+  AJAX_REQUESTS = [:template_selected, :cluster_selected, :resource_pools]
+  before_action :ajax_request, :only => AJAX_REQUESTS
+  before_action :find_resource, :only => [:show, :edit, :associate, :update, :destroy, :ping] + AJAX_REQUESTS
+
+  #This can happen in development when removing a plugin
+  rescue_from ActiveRecord::SubclassNotFound do |e|
+    type = (e.to_s =~ /failed to locate the subclass: '((\w|::)+)'/) ? $1 : 'STI-Type'
+    render :text => (e.to_s+"<br><b>run ComputeResource.delete_all(:type=>'#{type}') to recover.</b>").html_safe, :status=> :internal_server_error
+  end
 
   def index
-    begin
-      values = ComputeResource.my_compute_resources.search_for(params[:search], :order => params[:order])
-    rescue => e
-      error e.to_s
-      values = ComputeResource.my_compute_resources.search_for ""
-    end
-    @compute_resources = values.paginate :page => params[:page]
+    @compute_resources = resource_base.live_descendants.search_for(params[:search], :order => params[:order]).paginate :page => params[:page]
   end
 
   def new
@@ -25,8 +25,6 @@ class ComputeResourcesController < ApplicationController
     if params[:compute_resource].present? && params[:compute_resource][:provider].present?
       @compute_resource = ComputeResource.new_provider params[:compute_resource]
       if @compute_resource.save
-        # Add the new compute resource to the user's filters
-        @compute_resource.users << User.current
         process_success :success_redirect => @compute_resource
       else
         process_error
@@ -45,12 +43,10 @@ class ComputeResourcesController < ApplicationController
     count = 0
     if @compute_resource.respond_to?(:associated_host)
       @compute_resource.vms(:eager_loading => true).each do |vm|
-        if Host.where(:uuid => vm.identity).empty?
+        if Host.for_vm(@compute_resource, vm).empty?
           host = @compute_resource.associated_host(vm)
           if host.present?
-            host.uuid = vm.identity
-            host.compute_resource_id = @compute_resource.id
-            host.save!(:validate => false) # don't want to trigger callbacks
+            host.associate!(@compute_resource, vm)
             count += 1
           end
         end
@@ -60,9 +56,8 @@ class ComputeResourcesController < ApplicationController
   end
 
   def update
-    params[:compute_resource].except!(:password) if params[:compute_resource][:password].blank?
     if @compute_resource.update_attributes(params[:compute_resource])
-      process_success
+      process_success :success_redirect => compute_resources_path
     else
       process_error
     end
@@ -92,7 +87,7 @@ class ComputeResourcesController < ApplicationController
     # cr_id is posted from AJAX function. cr_id is nil if new
     Rails.logger.info "CR_ID IS #{params[:cr_id]}"
     if params[:cr_id].present? && params[:cr_id] != 'null'
-      @compute_resource = ComputeResource.find(params[:cr_id])
+      @compute_resource = ComputeResource.authorized(:edit_compute_resources).find(params[:cr_id])
       params[:compute_resource].delete(:password) if params[:compute_resource][:password].blank?
       @compute_resource.attributes = params[:compute_resource]
     else
@@ -102,10 +97,8 @@ class ComputeResourcesController < ApplicationController
     render :partial => "compute_resources/form", :locals => { :compute_resource => @compute_resource }
   end
 
-  def hardware_profile_selected
-    compute = @compute_resource.hardware_profile(params[:hwp_id])
-    compute.interfaces
-    compute.volumes
+  def template_selected
+    compute = @compute_resource.template(params[:template_id])
     respond_to do |format|
       format.json { render :json => compute }
     end
@@ -118,11 +111,24 @@ class ComputeResourcesController < ApplicationController
     end
   end
 
+  def resource_pools
+    return head(:method_not_allowed) unless @compute_resource.is_a? Foreman::Model::Vmware
+    pools = @compute_resource.available_resource_pools(:cluster_id => params[:cluster_id])
+    respond_to do |format|
+      format.json { render :json => pools }
+    end
+  end
+
   private
 
-  def find_by_id
-    @compute_resource = ComputeResource.find(params[:id])
-    not_found and return unless @compute_resource
-    deny_access and return unless ComputeResource.my_compute_resources.include?(@compute_resource)
+  def action_permission
+    case params[:action]
+      when 'associate'
+        'edit'
+      when 'ping', 'template_selected', 'cluster_selected', 'resource_pools'
+        'view'
+      else
+        super
+    end
   end
 end

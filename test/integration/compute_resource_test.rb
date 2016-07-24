@@ -1,9 +1,8 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class ComputeResourceTest < ActionDispatch::IntegrationTest
-
+class ComputeResourceIntegrationTest < ActionDispatch::IntegrationTest
   test "index page" do
-    assert_index_page(compute_resources_path,"Listing compute resources","New Compute Resource")
+    assert_index_page(compute_resources_path,"Compute Resources","New Compute Resource")
   end
 
   test "edit compute resource" do
@@ -15,4 +14,12 @@ class ComputeResourceTest < ActionDispatch::IntegrationTest
     assert page.has_link? 'mycompute_old'
   end
 
+  test "compute resource password doesn't deleted while test connection" do
+    visit compute_resources_path
+    click_link "Vmware"
+    click_link "Edit"
+    fill_in "compute_resource_password", :disabled => true, :with => "123456"
+    click_link "Load Datacenters"
+    assert_equal "123456", find_field("compute_resource_password",:disabled => true).value
+  end
 end

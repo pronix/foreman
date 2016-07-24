@@ -45,9 +45,20 @@ class MenuItemTest < ActiveSupport::TestCase
     assert Menu::Item.new(:test_good_menu, :url_hash => {:controller=>'test', :action=>'index'}, :after => :me)
   end
 
+  def test_menu_item_should_use_url_parameter_when_available
+    item = Menu::Item.new(:test_good_menu, :url => '/overriden/url', :url_hash => {:controller=>'test', :action=>'index'}, :after => :me)
+    assert_equal '/overriden/url', item.url
+  end
+
+  def test_menu_item_uses_url_hash_by_default
+    item = Menu::Item.new(:test_good_menu, :url_hash => {:controller=>'test', :action=>'index'}, :after => :me)
+    ActionDispatch::Routing::RouteSet.any_instance.expects(:url_for).with(:controller=>'test', :action=>'index', :only_path => true).returns('/url')
+    assert_equal '/url', item.url
+  end
+
   def test_new_menu_item_should_require_a_proc_to_use_for_the_if_condition
     assert_raises ArgumentError do
-      Menu::Item.new(:test_error, :if => ['not_a_proc'] )
+      Menu::Item.new(:test_error, :if => ['not_a_proc'])
     end
 
     assert Menu::Item.new(:test_good_if, :if => Proc.new{})
@@ -66,12 +77,12 @@ class MenuItemTest < ActiveSupport::TestCase
       Menu::Item.new(:test_error, :children => ['not_a_proc'])
     end
 
-    assert Menu::Item.new(:test_good_children, :children => Proc.new{} )
+    assert Menu::Item.new(:test_good_children, :children => Proc.new{})
   end
 
   def test_new_should_not_allow_setting_the_parent_item_to_the_current_item
     assert_raises ArgumentError do
-      Menu::Item.new(:test_error, :parent => :test_error )
+      Menu::Item.new(:test_error, :parent => :test_error)
     end
   end
 
@@ -81,5 +92,10 @@ class MenuItemTest < ActiveSupport::TestCase
     assert_equal 2, parent_item.children.size
     assert_equal get_menu_item(:test_menu, :child_menu), parent_item.children[0]
     assert_equal get_menu_item(:test_menu, :child2_menu), parent_item.children[1]
+  end
+
+  def test_menu_item_exposes_turbolinks_option
+    item = Menu::Item.new(:test_good_menu, :url_hash => {:controller=>'test', :action=>'index'}, :after => :me, :turbolinks => false)
+    assert_equal item.turbolinks, false
   end
 end

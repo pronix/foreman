@@ -1,7 +1,7 @@
 module Api
   module V1
     class PtablesController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/ptables/", "List all ptables."
       param :search, String, :desc => "filter results"
@@ -10,7 +10,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @ptables = Ptable.search_for(*search_options).paginate(paginate_options)
+        @ptables = Ptable.
+          authorized(:view_ptables).
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/ptables/:id/", "Show a ptable."
@@ -49,7 +51,6 @@ module Api
       def destroy
         process_response @ptable.destroy
       end
-
     end
   end
 end

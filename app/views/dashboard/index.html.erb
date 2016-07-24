@@ -1,44 +1,27 @@
+<%= javascript 'dashboard' %>
 <% title _('Overview') %>
-<div id='dashboard' xmlns="http://www.w3.org/1999/html">
-  <%= title_actions _("Generated at %s") % Time.now.to_s(:short) %>
-  <div class="row-fluid">
-    <div id='status-table' class='stats-well span12'>
-      <div class="span6">
-        <%= render 'status_table' %>
-      </div>
-      <div class="span6">
-        <%= render_overview(@report, :class => 'statistics-pie small') %>
-      </div>
+<%= title_actions dashboard_actions %>
+
+<div class="row">
+  <% if User.current.widgets.empty? %>
+    <div class="col-md-12 ca">
+      <%= link_to(_("Get default dashboard widgets"), reset_default_widgets_path, :method => :put, :class=>'btn btn-default') %>
     </div>
-  </div>
-  <div class="row-fluid">
-    <div class="span5 stats-well">
-      <h4 style="text-align: center;"><%= _("Latest Events") %></h4>
-      <% events = latest_events %>
-      <% if events.empty? %>
-        <p class="ca"><%= _("No interesting reports received in the last week") %></p>
-      <% else %>
-        <table class="table table-striped ellipsis">
-          <tr>
-            <%= latest_headers %>
-          </tr>
-          <% events.each do |report| %>
-            <tr>
-              <td><%= link_to h(trunc(report.host, 14)), host_reports_path(report.host) %></td>
-              <td><%= report_event_column(report.applied, "label-info") %></td>
-              <td><%= report_event_column(report.restarted, "label-info") %></td>
-              <td><%= report_event_column(report.failed, "label-important") %></td>
-              <td><%= report_event_column(report.failed_restarts, "label-warning") %></td>
-              <td><%= report_event_column(report.skipped, "label-info") %></td>
-              <td><%= report_event_column(report.pending, "label-info") %></td>
-            </tr>
+  <% else %>
+    <div id='dashboard' class="dashboard gridster col-md-12">
+      <ul>
+        <% User.current.widgets.order(:id).each do |widget| %>
+          <%= content_tag(:li, widget_data(widget)) do %>
+            <div class='widget_control'>
+              <a class='remove' data-url='<%= widget_path(widget) %>'>&times;</a>
+              <a class='minimize'>&minus;</a>
+            </div>
+            <div class="widget <%= widget.name.parameterize %>">
+              <%= render_widget(widget) %>
+            </div>
           <% end %>
-        </table>
-      <% end %>
+        <% end %>
+      </ul>
     </div>
-    <div class="span7 stats-well">
-      <h4 style="text-align: center;"><%= n_("Run distribution in the last %s minute", "Run distribution in the last %s minutes", Setting[:puppet_interval]) % Setting[:puppet_interval] %></h4>
-      <%= render_run_distribution(@hosts, :class => 'statistics-bar') %>
-    </div>
-  </div>
+  <% end %>
 </div>

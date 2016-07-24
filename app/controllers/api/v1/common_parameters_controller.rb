@@ -1,7 +1,7 @@
 module Api
   module V1
     class CommonParametersController < V1::BaseController
-      before_filter :find_resource, :only => [:show, :update, :destroy]
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/common_parameters/", "List all common parameters."
       param :search, String, :desc => "filter results"
@@ -10,7 +10,10 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @common_parameters = CommonParameter.search_for(*search_options).paginate(paginate_options)
+        @common_parameters = CommonParameter.
+          authorized(:view_globals, CommonParameter).
+          search_for(*search_options).
+          paginate(paginate_options)
       end
 
       api :GET, "/common_parameters/:id/", "Show a common parameter."
@@ -23,6 +26,7 @@ module Api
       param :common_parameter, Hash, :required => true do
         param :name, String, :required => true
         param :value, String, :required => true
+        param :hidden_value, [true, false]
       end
 
       def create
@@ -35,6 +39,7 @@ module Api
       param :common_parameter, Hash, :required => true do
         param :name, String
         param :value, String
+        param :hidden_value, [true, false]
       end
 
       def update
@@ -47,7 +52,6 @@ module Api
       def destroy
         process_response @common_parameter.destroy
       end
-
     end
   end
 end

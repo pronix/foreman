@@ -12,7 +12,10 @@ require 'foreman/access_permissions'
 # an appropriate permission so views using those requests function.
 class AccessPermissionsTest < ActiveSupport::TestCase
   MAY_SKIP_REQUIRE_LOGIN = [
-    "users/login", "users/logout", "users/extlogin", "users/extlogout", "home/status", "notices/destroy", "unattended/",
+    "users/login", "users/logout", "users/extlogin", "users/extlogout", "home/status", "notices/destroy",
+
+    # unattended built action is not for interactive use
+    "unattended/built",
 
     # puppetmaster interfaces
     "fact_values/create", "reports/create",
@@ -24,19 +27,30 @@ class AccessPermissionsTest < ActiveSupport::TestCase
     "audits/create", "audits/destroy", "audits/edit", "audits/new", "audits/update",
 
     # Apipie
-    "apipie/apipies/index",
+    "apipie/apipies/index", "apipie/apipies/apipie_checksum",
 
-    # API app controller stub
-    "api/testable/index"
+    # App controller stubs
+    "testable/index", "api/testable/index", "api/testable/raise_error",
+    "api/testable/required_nested_values", "api/testable/optional_nested_values", "api/testable/nested_values",
+    "api/v2/testable/index", "api/v2/testable/create",
+
+    #test stubs
+    "testable_resources/index",
+
+    # Content Security Policy report forwarding endpoint - noop if not configured.
+    # See https://github.com/twitter/secureheaders/issues/113
+    "content_security_policy/scribe"
   ]
 
   MAY_SKIP_AUTHORIZED = [ "about/index" ]
 
   # For each controller action, verify it has a permission that grants access
-  Rails.application.routes.routes.inject({}) do |routes, r|
-    routes["#{r.defaults[:controller].gsub(/::/, "_").underscore}/#{r.defaults[:action]}"] = r if r.defaults[:controller]
+  app_routes = Rails.application.routes.routes.inject({}) do |routes, r|
+    routes["#{r.defaults[:controller].gsub(/::/, '_').underscore}/#{r.defaults[:action]}"] = r if r.defaults[:controller]
     routes
-  end.each do |path, r|
+  end
+
+  app_routes.each do |path, r|
     # Skip if excluded from this test (e.g. user login)
     next if (MAY_SKIP_AUTHORIZED + MAY_SKIP_REQUIRE_LOGIN).include? path
 

@@ -1,4 +1,5 @@
 group :gce do
-  gem "google-api-client", :require => "google/api_client"
-  gem 'sshkey'
+  gem 'fog-google', '<= 0.1.0'
+  gem 'google-api-client', '~> 0.8.2', :require => 'google/api_client'
+  gem 'sshkey', '~> 1.3'
 end

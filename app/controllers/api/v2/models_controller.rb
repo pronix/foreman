@@ -1,55 +1,57 @@
 module Api
   module V2
     class ModelsController < V2::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
-      api :GET, "/models/", "List all models."
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/models/", N_("List all hardware models")
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @models = Model.search_for(*search_options).paginate(paginate_options)
+        @models = resource_scope_for_index
       end
 
-      api :GET, "/models/:id/", "Show a model."
+      api :GET, "/models/:id/", N_("Show a hardware model")
       param :id, :identifier, :required => true
 
       def show
       end
 
-      api :POST, "/models/", "Create a model."
-      param :model, Hash, :required => true do
-        param :name, String, :required => true
-        param :info, String, :required => false
-        param :vendor_class, String, :required => false
-        param :hardware_model, String, :required => false
+      def_param_group :model do
+        param :model, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true
+          param :info, String, :required => false
+          param :vendor_class, String, :required => false
+          param :hardware_model, String, :required => false
+        end
       end
+
+      api :POST, "/models/", N_("Create a hardware model")
+      param_group :model, :as => :create
 
       def create
         @model = Model.new(params[:model])
         process_response @model.save
       end
 
-      api :PUT, "/models/:id/", "Update a model."
+      api :PUT, "/models/:id/", N_("Update a hardware model")
       param :id, String, :required => true
-      param :model, Hash, :required => true do
-        param :name, String
-        param :info, String
-        param :vendor_class, String
-        param :hardware_model, String
-      end
+      param_group :model
 
       def update
         process_response @model.update_attributes(params[:model])
       end
 
-      api :DELETE, "/models/:id/", "Delete a model."
+      api :DELETE, "/models/:id/", N_("Delete a hardware model")
       param :id, String, :required => true
 
       def destroy
         process_response @model.destroy
+      end
+
+      private
+
+      def find_resource
+        @model = Model.friendly.find(params[:id]) || super
       end
     end
   end

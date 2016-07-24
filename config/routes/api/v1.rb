@@ -1,9 +1,7 @@
 # config/routes/api/v1.rb
 Foreman::Application.routes.draw do
-
   namespace :api, :defaults => {:format => 'json'} do
-    scope "(:apiv)", :module => :v1, :defaults => {:apiv => 'v1'}, :apiv => /v1|v2/, :constraints => ApiConstraints.new(:version => 1, :default => true) do
-
+    scope "(:apiv)", :module => :v1, :defaults => {:apiv => 'v1'}, :apiv => /v1|v2/, :constraints => ApiConstraints.new(:version => 1) do
       resources :architectures, :except => [:new, :edit]
       resources :audits, :only => [:index, :show]
       resources :auth_source_ldaps, :except => [:new, :edit]
@@ -13,12 +11,12 @@ Foreman::Application.routes.draw do
       constraints(:id => /[^\/]+/) do
         resources :domains, :except => [:new, :edit]
         resources :hosts, :except => [:new, :edit] do
-          resources :reports       ,:only => [:index, :show] do
+          resources :reports, :only => [:index, :show] do
             get :last, :on => :collection
           end
-          resources :audits        ,:only => :index
-          resources :facts         ,:only => :index, :controller => :fact_values
-          resources :puppetclasses ,:only => :index
+          resources :audits, :only => :index
+          resources :facts, :only => :index, :controller => :fact_values
+          resources :puppetclasses, :only => :index
           get :status, :on => :member
         end
         resources :compute_resources, :except => [:new, :edit] do
@@ -68,10 +66,8 @@ Foreman::Application.routes.draw do
       resources :users, :except => [:new, :edit]
       resources :template_kinds, :only => [:index]
 
-      match '/', :to => 'home#index'
-      match 'status', :to => 'home#status', :as => "status"
+      get '/', :to => 'home#index'
+      get 'status', :to => 'home#status', :as => "status"
     end
-
   end
-
 end

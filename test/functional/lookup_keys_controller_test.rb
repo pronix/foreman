@@ -1,43 +1,59 @@
 require 'test_helper'
 
 class LookupKeysControllerTest < ActionController::TestCase
-  test "should get index" do
-    get :index, {}, set_session_user
+  tests PuppetclassLookupKeysController
+
+  setup do
+    @key = lookup_keys(:one)
+    @base = {
+      :key => @key.key,
+      :override => true,
+      :lookup_values_attributes => {}
+    }
+    @value = @key.override_values[1]
+    @key.override_values = [@value]
+    @create = {"new_1462788609698"=>{"match"=>"hostgroup=db", "value"=>'4', "use_puppet_default"=>"0", "_destroy"=>"false"}}
+    @delete = {"0"=>{"match"=>@value.match, "value"=>@value.value, "use_puppet_default"=>"0", "_destroy"=>"1", "id"=>@value.id } }
+  end
+
+  test 'patch add valid override' do
+    @key.override_values = []
+    Setting::General.any_instance.stubs(:valid?).returns(true)
+
+    assert_equal @key.override_values.count, 0
+    params = @base.merge(:lookup_values_attributes => @create)
+    patch :update, {:id => "#{@key.id}-#{@key.key}", :puppetclass_lookup_key => params}, set_session_user
+    assert_redirected_to puppetclass_lookup_keys_path
+
+    assert_equal @key.reload.override_values.count, 1
+    value = @key.override_values.first
+    assert_equal 'hostgroup=db', value.match
+    assert_equal 4, value.value
+  end
+
+  test 'patch delete' do
+    params = @base.merge(:lookup_values_attributes => @delete)
+    patch :update, {:id => "#{@key.id}-#{@key.key}", :puppetclass_lookup_key => params}, set_session_user
+    assert_redirected_to puppetclass_lookup_keys_path
+    assert_equal 0, @key.reload.override_values.count
+  end
+
+  test 'patch add and delete' do
+    params = @base.merge(:lookup_values_attributes => @create.merge(@delete))
+    patch :update, {:id => "#{@key.id}-#{@key.key}", :puppetclass_lookup_key => params}, set_session_user
+    assert_redirected_to puppetclass_lookup_keys_path
+    assert_equal @key.reload.override_values.count, 1
+    updated = @key.override_values.first
+    assert_equal 4, updated.value
+    assert_equal @value.match, updated.match
+  end
+
+  test 'patch conflicting' do
+    create = {'new_1462788609699' => @create.values.first }
+    params = @base.merge(:lookup_values_attributes => @create.merge(@delete.merge(create)))
+    patch :update, {:id => "#{@key.id}-#{@key.key}", :puppetclass_lookup_key => params}, set_session_user
     assert_response :success
-    assert_not_nil assigns(:lookup_keys)
-  end
-
-  test "should get edit" do
-    get :edit, {:id => lookup_keys(:one).to_param}, set_session_user
-    assert_response :success
-  end
-
-  test "should update lookup_keys" do
-    put :update, {:id => lookup_keys(:one).to_param, :lookup_key => { :description => "test that" }}, set_session_user
-    assert_redirected_to lookup_keys_path
-  end
-
-  test "should destroy lookup_keys" do
-    assert_difference('LookupKey.count', -1) do
-      delete :destroy, {:id => lookup_keys(:one).to_param}, set_session_user
-    end
-    assert_redirected_to lookup_keys_path
-  end
-
-  def setup_user
-    @request.session[:user] = users(:one).id
-    users(:one).roles       = [Role.find_by_name('Anonymous'), Role.find_by_name('Viewer')]
-  end
-
-  test 'user with viewer rights should fail to edit an external variable' do
-    setup_user
-    get :edit, {:id => LookupKey.first.id}, set_session_user.merge(:user => users(:one).id)
-    assert_equal response.status, 403
-  end
-
-  test 'user with viewer rights should succeed in viewing external variables' do
-    setup_user
-    get :index, {}, set_session_user.merge(:user => users(:one).id)
-    assert_response :success
+    assert_equal 1, @key.reload.override_values.count
+    assert_equal @value.value, @key.override_values.first.value
   end
 end

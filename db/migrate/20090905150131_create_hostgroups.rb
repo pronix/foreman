@@ -1,7 +1,7 @@
 class CreateHostgroups < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :hostgroups do |t|
-      t.string :name
+      t.string :name, :limit => 255
 
       t.timestamps
     end
@@ -15,7 +15,7 @@ class CreateHostgroups < ActiveRecord::Migration
     add_column :parameters, :hostgroup_id, :integer
   end
 
-  def self.down
+  def down
     drop_table :hostgroups
     drop_table :hostgroups_puppetclasses
     remove_column :hosts, :hostgroup_id

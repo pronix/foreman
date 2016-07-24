@@ -66,7 +66,6 @@ namespace :db do
   namespace :convert do
     desc 'Convert/import production data to development.   DANGER Deletes all data in the development database.   Assumes both schemas are already migrated.'
     task :prod2dev => :environment do
-
       # We need unique classes so ActiveRecord can hash different connections
       # We do not want to use the real Model classes because any business
       # rules will likely get in the way of a database transfer
@@ -105,15 +104,18 @@ namespace :db do
         # Handle HABTM tables which don't have an id primary key
         # This *shouldn't* be needed but Rails seems to be picking
         # up the pkey from other tables in some kind of race condition
-        test_model = ProductionModelClass.first
-        DevelopmentModelClass.primary_key = nil unless test_model.try(:id)
+        unless ProductionModelClass.column_names.include?('id')
+          DevelopmentModelClass.primary_key = nil
+          ProductionModelClass.primary_key = nil
+        end
 
         # Page through the data in case the table is too large to fit in RAM
         offset = count = 0
-        print "Converting #{table_name}..."; STDOUT.flush
+        print "Converting #{table_name}..."
+        STDOUT.flush
         # First, delete any old dev data
         DevelopmentModelClass.delete_all
-        while ((models = ProductionModelClass.all(:offset=>offset, :limit=>PAGE_SIZE)).size > 0)
+        while ((models = ProductionModelClass.offset(offset).limit(PAGE_SIZE)).size > 0)
 
           count += models.size
           offset += PAGE_SIZE
@@ -121,7 +123,6 @@ namespace :db do
           # Now, write out the prod data to the dev db
           DevelopmentModelClass.transaction do
             models.each do |model|
-
               new_model = DevelopmentModelClass.new()
 
               model.attributes.each do |key, value|
@@ -133,8 +134,8 @@ namespace :db do
 
               # Write timestamps for things which haven't had them set
               # as these columns are DEFAULT NOT NULL
-              new_model[:created_at] ||= time
-              new_model[:updated_at] ||= time
+              new_model[:created_at] ||= time if new_model.attributes.include?('created_at')
+              new_model[:updated_at] ||= time if new_model.attributes.include?('updated_at')
 
               new_model.save(:validate => false)
             end

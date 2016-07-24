@@ -15,9 +15,7 @@ module Foreman::Controller::Authentication
 
       if user.is_a?(User)
         logger.info("Authorized user #{user.login}(#{user.to_label})")
-        User.current = user
-        session[:user] = User.current.id unless api_request?
-        return User.current.present?
+        set_current_user user
       else
         if api_request?
           false
@@ -28,20 +26,20 @@ module Foreman::Controller::Authentication
 
           (redirect_to @available_sso.login_url and return) unless @available_sso.has_rendered
         end
-
       end
-
     else
-      # We assume we always have a user logged in, if authentication is disabled, the user is the built-in admin account.
-      User.current = User.admin
-      session[:user] = User.current.id unless api_request?
+      # We assume we always have a user logged in
+      # if authentication is disabled, the user is the built-in admin account
+      set_current_user User.only_admin.except_hidden.first
     end
   end
 
   def authorized
-    User.current.allowed_to?(
-      :controller => params[:controller].gsub(/::/, "_").underscore,
-      :action     => params[:action])
+    User.current.allowed_to?(path_to_authenticate)
+  end
+
+  def path_to_authenticate
+    Foreman::AccessControl.normalize_path_hash(params.slice(:controller, :action, :id))
   end
 
   def require_login
@@ -53,13 +51,15 @@ module Foreman::Controller::Authentication
     return true if User.current && User.current.admin?
     User.current = sso_authentication || (return false)
     return User.current.admin? if User.current
-    return false
+    false
   end
+
+  private
 
   def sso_authentication
     if available_sso.present?
       if available_sso.authenticated?
-        user = User.unscoped.find_by_login(available_sso.user)
+        user = available_sso.current_user
         update_activity_time unless api_request?
       elsif available_sso.support_login?
         available_sso.authenticate!
@@ -76,5 +76,17 @@ module Foreman::Controller::Authentication
     user
   end
 
-end
+  def set_current_user(user)
+    User.current = user
 
+    # API access shouldn't modify the session, its authentication should be
+    # stateless.  Other successful logins should create new session IDs.
+    unless api_request?
+      backup_session_content { reset_session }
+      session[:user] = user.id
+      update_activity_time
+      Foreman::Controller::UsersMixin.set_current_taxonomies(user, {:session => session})
+    end
+    user.present?
+  end
+end

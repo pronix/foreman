@@ -1,32 +1,51 @@
 # Read about fixtures at http://ar.rubyonrails.org/classes/Fixtures.html
 
 one:
-  config_template: mystring
-  template_kind: gpxe
-  operatingsystem: centos5_3
+  provisioning_template: mystring
+  template_kind: ipxe
+  operatingsystem: redhat
 
 two:
-  config_template: mystring2
+  provisioning_template: mystring2
   template_kind: provision
-  operatingsystem: centos5_3
+  operatingsystem: redhat
 
 three:
-  config_template: myscript
+  provisioning_template: myscript
   template_kind:  script
-  operatingsystem: centos5_3
+  operatingsystem: redhat
 
 four:
-  config_template: pxekickstart
+  provisioning_template: pxekickstart
   template_kind: PXELinux
-  operatingsystem: centos5_3
+  operatingsystem: redhat
 
 five:
-  config_template: pxegrub
+  provisioning_template: pxegrub
   template_kind: pxegrub
-  operatingsystem: centos5_3
+  operatingsystem: redhat
 
 six:
-  config_template: gpxe
-  template_kind: gpxe
-  operatingsystem: centos5_3
+  provisioning_template: ipxe
+  template_kind: ipxe
+  operatingsystem: redhat
 
+seven:
+  provisioning_template: mystring2
+  template_kind: provision
+  operatingsystem: ubuntu1010
+
+eight:
+  provisioning_template: pxekickstart
+  template_kind: PXELinux
+  operatingsystem: ubuntu1010
+
+nine:
+  provisioning_template: myfinish
+  template_kind: finish
+  operatingsystem: ubuntu1010
+
+ten:
+  provisioning_template: pxeautoyast
+  template_kind: PXELinux
+  operatingsystem: opensuse

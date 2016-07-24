@@ -2,108 +2,132 @@ require 'test_helper'
 
 class ReportTest < ActiveSupport::TestCase
   def setup
-    User.current = User.admin
-    @r=Report.import read_json_fixture("report-skipped.json")
+    User.current = users :admin
   end
 
-  test "it should true on error? if there were errors" do
-    @r.status={"applied" => 92, "restarted" => 300, "failed" => 4, "failed_restarts" => 12, "skipped" => 3, "pending" => 0}
-    assert @r.error?
-  end
-
-  test "it should not be an error if there are only skips" do
-    @r.status={"applied" => 92, "restarted" => 300, "failed" => 0, "failed_restarts" => 0, "skipped" => 3, "pending" => 0}
-    assert !@r.error?
-  end
-
-  test "it should false on error? if there were no errors" do
-    @r.status={"applied" => 92, "restarted" => 300, "failed" => 0, "failed_restarts" => 0, "skipped" => 0, "pending" => 0}
-    assert !@r.error?
-  end
-
-  test "with named scope should return our report with applied resources" do
-    @r.status={"applied" => 15, "restarted" => 0, "failed" => 0, "failed_restarts" => 0, "skipped" => 0, "pending" => 0}
-    @r.save
-    assert Report.with("applied",14).include?(@r)
-    assert !Report.with("applied", 15).include?(@r)
-  end
-
-  test "with named scope should return our report with restarted resources" do
-    @r.status={"applied" => 0, "restarted" => 5, "failed" => 0, "failed_restarts" => 0, "skipped" => 0, "pending" => 0}
-    @r.save
-    assert Report.with("restarted").include?(@r)
-  end
-
-  test "with named scope should return our report with failed resources" do
-    @r.status={"applied" => 0, "restarted" => 0, "failed" => 9, "failed_restarts" => 0, "skipped" => 0, "pending" => 0}
-    @r.save
-    assert Report.with("failed").include?(@r)
-  end
-
-  test "with named scope should return our report with failed_restarts resources" do
-    @r.status={"applied" => 0, "restarted" => 0, "failed" => 0, "failed_restarts" => 91, "skipped" => 0, "pending" => 0}
-    @r.save
-    assert Report.with("failed_restarts").include?(@r)
-  end
-
-  test "with named scope should return our report with skipped resources" do
-    @r.status={"applied" => 0, "restarted" => 0, "failed" => 0, "failed_restarts" => 0, "skipped" => 8, "pending" => 0}
-    @r.save
-    assert Report.with("skipped").include?(@r)
-  end
-
-  test "with named scope should return our report with skipped resources when other bits are also used" do
-    @r.status={"applied" => 0, "restarted" => 0, "failed" => 9, "failed_restarts" => 4, "skipped" => 8, "pending" => 3}
-    @r.save
-    assert Report.with("skipped").include?(@r)
-  end
-
-  test "with named scope should return our report with pending resources when other bits are also used" do
-    @r.status={"applied" => 0, "restarted" => 0, "failed" => 9, "failed_restarts" => 4, "skipped" => 8, "pending" => 3}
-    @r.save
-    assert Report.with("pending").include?(@r)
-  end
-
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_reports"
-      role.permissions = ["#{operation}_reports".to_sym]
-      @one.roles = [role]
-      @one.save!
-      @r.save!
+  test "should expire reports created 1 week ago" do
+    report_count = 3
+    Message.delete_all
+    Source.delete_all
+    FactoryGirl.create_list(:report, report_count, :with_logs)
+    FactoryGirl.create_list(:report, report_count, :with_logs, :old_report)
+    assert_equal report_count*2, Report.count
+    assert_difference('Report.count', -1*report_count) do
+      assert_difference(['Log.count', 'Message.count', 'Source.count'], -1*report_count*5) do
+        Report.expire
+      end
     end
-    User.current = @one
   end
 
-  test "user with destroy permissions should be able to destroy" do
-    setup_user "destroy"
-    record = @r
-    assert record.destroy
-    assert record.frozen?
+  describe '.my_reports' do
+    setup do
+      @target_host = FactoryGirl.create(:host, :with_hostgroup)
+      @target_reports = FactoryGirl.create_pair(:config_report, host: @target_host)
+      @other_host = FactoryGirl.create(:host, :with_hostgroup)
+      @other_reports = FactoryGirl.create_pair(:report, host: @other_host)
+    end
+
+    test 'returns all reports for admin' do
+      as_admin do
+        assert_empty (@target_reports + @other_reports).map(&:id) - Report.my_reports.map(&:id)
+      end
+    end
+
+    test 'returns visible reports for unlimited user' do
+      user_role = FactoryGirl.create(:user_user_role)
+      FactoryGirl.create(:filter, :role => user_role.role, :permissions => Permission.where(:name => 'view_hosts'), :unlimited => true)
+      collection = as_user(user_role.owner) { Report.my_reports }
+      assert_empty (@target_reports + @other_reports).map(&:id) - collection.map(&:id)
+    end
+
+    test 'returns visible reports for filtered user' do
+      user_role = FactoryGirl.create(:user_user_role)
+      FactoryGirl.create(:filter, :role => user_role.role, :permissions => Permission.where(:name => 'view_hosts'), :search => "hostgroup_id = #{@target_host.hostgroup_id}")
+      as_user user_role.owner do
+        assert_equal @target_reports.map(&:id).sort, Report.my_reports.map(&:id).sort
+      end
+    end
+
+    test "only return reports from host in user's taxonomies" do
+      user_role = FactoryGirl.create(:user_user_role)
+      FactoryGirl.create(:filter, :role => user_role.role, :permissions => Permission.where(:name => 'view_hosts'), :search => "hostgroup_id = #{@target_host.hostgroup_id}")
+
+      orgs = FactoryGirl.create_pair(:organization)
+      locs = FactoryGirl.create_pair(:location)
+      @target_host.update_attributes(:location => locs.last, :organization => orgs.last)
+      @target_host.hostgroup.update_attributes(:locations => [locs.last], :organizations => [orgs.last])
+
+      user_role.owner.update_attributes(:locations => [locs.first], :organizations => [orgs.first])
+      as_user user_role.owner do
+        assert_equal [], Report.my_reports.map(&:id).sort
+      end
+
+      user_role.owner.update_attributes(:locations => [locs.last], :organizations => [orgs.last])
+      as_user user_role.owner do
+        assert_equal @target_reports.map(&:id).sort, Report.my_reports.map(&:id).sort
+      end
+    end
+
+    test "only return reports from host in admin's currently selected taxonomy" do
+      user = FactoryGirl.create(:user, :admin)
+      orgs = FactoryGirl.create_pair(:organization)
+      locs = FactoryGirl.create_pair(:location)
+      @target_host.update_attributes(:location => locs.last, :organization => orgs.last)
+
+      as_user user do
+        in_taxonomy(orgs.first) do
+          in_taxonomy(locs.first) do
+            refute_includes Report.my_reports, @target_reports.first
+          end
+        end
+
+        in_taxonomy(orgs.last) do
+          in_taxonomy(locs.last) do
+            assert_includes Report.my_reports, @target_reports.first
+          end
+        end
+      end
+    end
   end
 
-  test "user with edit permissions should not be able to destroy" do
-    setup_user "edit"
-    record =  @r
-    assert !record.destroy
-    assert !record.frozen?
-  end
+  describe 'Report STI' do
+    test "Report has default type" do
+      report = Report.new
+      assert_equal('ConfigReport', report.type)
+    end
 
-  test "user with edit permissions should not be able to edit" do
-    # Reports are not an editable resource
-    setup_user "edit"
-    record        =  @r
-    record.status = {}
-    assert !record.save
-  end
+    test '.expire should delete only the class which calls it' do
+      FactoryGirl.create_list(:config_report, 5, :old_report)
+      FactoryGirl.create_list(:report, 5, :old_report, :type => 'TestReport')
+      TestReport.expire
+      refute(TestReport.all.any?)
+      assert(ConfigReport.all.any?)
+    end
 
-  test "user with destroy permissions should not be able to edit" do
-    setup_user "destroy"
-    record        =  @r
-    record.status = {}
-    assert !record.save
-    assert record.valid?
-  end
+    test '#metrics with metrics should return empty hash' do
+      report = ConfigReport.import read_json_fixture('report-empty.json')
+      assert_equal({}, report.metrics)
+      report = ConfigReport.import read_json_fixture('report-no-logs.json')
+      refute_equal({}, report.metrics)
+      assert_equal({'success' => 1, 'total' => 1, 'failure' =>0}, report.metrics['events'])
+      report = TestReport.new
+      assert_equal({}, report.metrics)
+    end
 
+    test 'can view host reports as non-admin user' do
+      report = FactoryGirl.create(:config_report)
+      setup_user('view', 'hosts', "name = #{report.host.name}")
+      setup_user('view', 'config_reports')
+
+      assert_includes ConfigReport.authorized('view_config_reports').my_reports, report
+    end
+
+    test 'Inherited children can search' do
+      assert_nothing_raised NoMethodError do
+        TestReport.search_for('blah')
+      end
+    end
+  end
 end
+
+class TestReport < Report; end

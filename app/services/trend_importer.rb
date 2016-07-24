@@ -1,5 +1,4 @@
 class TrendImporter
-
   def self.update!
     importer = new
     importer.check_values
@@ -22,8 +21,8 @@ class TrendImporter
   end
 
   def update_trend_counters
-    timestamp = Time.now
-    counter_hash = Hash.new
+    timestamp = Time.now.utc
+    counter_hash = {}
     Trend.types.each do |trend|
       if trend.is_a? FactTrend
         counter_hash[trend.trendable_id]   = Host.joins(:fact_values).where(:fact_values => {:fact_name_id => trend.trendable_id}).group(:value).count
@@ -32,19 +31,32 @@ class TrendImporter
       end
     end
     Trend.has_value.each do |trend|
-      counter = trend.trend_counters.new
-      counter.count = if trend.is_a? FactTrend
-                        counter_hash[trend.trendable_id][trend.fact_value]
-                      else
-                        counter_hash[trend.trendable_type][trend.trendable_id]
-                      end || 0
-      counter.created_at = timestamp
-      counter.save!
+      new_count = if trend.is_a? FactTrend
+                    counter_hash[trend.trendable_id][trend.fact_value]
+                  else
+                    counter_hash[trend.trendable_type][trend.trendable_id]
+                  end || 0
+
+      latest_counter = trend.trend_counters.order(:created_at).last
+      if latest_counter
+        latest_counter.interval_end = timestamp
+        latest_counter.save!
       end
+
+      next unless self.class.should_create_counter?(latest_counter, new_count, timestamp)
+
+      trend.trend_counters.create!  :count => new_count,
+                                    :created_at => timestamp,
+                                    :interval_start => timestamp
+    end
+  end
+
+  def self.should_create_counter?(latest_counter, new_count, timestamp)
+    return true if latest_counter.nil?
+
+    latest_counter.count != new_count
   end
 
   def aggregate_counters
-
   end
-
 end

@@ -1,9 +1,8 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class UsergroupTest < ActionDispatch::IntegrationTest
-
+class UsergroupIntegrationTest < ActionDispatch::IntegrationTest
   def setup
-    as_admin { FactoryGirl.create(:usergroup, :name => "Admins") }
+    as_admin { @usergroup = FactoryGirl.create(:usergroup) }
   end
 
   test "index page" do
@@ -19,10 +18,9 @@ class UsergroupTest < ActionDispatch::IntegrationTest
 
   test "edit page" do
     visit usergroups_path
-    click_link "Admins"
+    click_link @usergroup.name
     fill_in "usergroup_name", :with => "SuperAdmins"
     assert_submit_button(usergroups_path)
     assert page.has_link? 'SuperAdmins'
   end
-
 end

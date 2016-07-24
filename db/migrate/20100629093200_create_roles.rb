@@ -1,5 +1,5 @@
-class CreateRoles  < ActiveRecord::Migration
-  def self.up
+class CreateRoles < ActiveRecord::Migration
+  def up
     add_column :users, :role_id, :integer
     create_table "roles", :force => true do |t|
       t.string "name", :limit => 30
@@ -12,10 +12,9 @@ class CreateRoles  < ActiveRecord::Migration
       t.integer :role_id
       t.integer :inherited_from
     end
-
   end
 
-  def self.down
+  def down
     drop_table :user_roles
     drop_table :roles
     remove_column :users, :role_id

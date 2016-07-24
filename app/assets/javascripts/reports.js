@@ -2,7 +2,7 @@ $(function() {
   var source = $('td:contains("---")');
 
   source.contents().wrap("<div class='origin'></div>");
-  source.prepend("<a href='#' onclick='show_diff(this)' >" + _('View Diff') + "</a>");
+  source.prepend("<a href='#' onclick='show_diff(this)' >" + __('View Diff') + "</a>");
   $('.origin').hide();
 
 });
@@ -14,7 +14,7 @@ function show_diff(item){
         .css("position","relative")
         .css("padding-top","0")
         .height('380')
-        .width('680');
+        .width('588');
 
   var editor = ace.edit("diff-modal-editor");
   editor.setTheme("ace/theme/clouds");

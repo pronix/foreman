@@ -1,6 +1,6 @@
 class AddOsFamilyToMedia < ActiveRecord::Migration
-  def self.up
-    add_column :media, :os_family, :string
+  def up
+    add_column :media, :os_family, :string, :limit => 255
     Medium.reset_column_information
     Medium.unscoped.all.each do |m|
       family = m.operatingsystems.map(&:family).uniq.first rescue nil
@@ -8,7 +8,7 @@ class AddOsFamilyToMedia < ActiveRecord::Migration
     end
   end
 
-  def self.down
+  def down
     remove_column :media, :os_family
   end
 end

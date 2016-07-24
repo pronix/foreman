@@ -1,6 +1,9 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class OrganizationTest < ActionDispatch::IntegrationTest
+class OrganizationIntegrationTest < ActionDispatch::IntegrationTest
+  def setup
+    FactoryGirl.create(:host)
+  end
 
   test "index page" do
     assert_index_page(organizations_path,"Organizations","New Organization")
@@ -23,11 +26,11 @@ class OrganizationTest < ActionDispatch::IntegrationTest
   # context - creating when all hosts are assigned
   test "create new page when all hosts are assigned a organization" do
     Host.update_all(:organization_id => Organization.first.id)
-    assert !has_selector?("div.alert", :text => "with no organization assigned")
+    assert has_no_selector?("div.alert", :text => "with no organization assigned")
     assert_new_button(organizations_path,"New Organization",new_organization_path)
     fill_in "organization_name", :with => "Finance"
-    assert_submit_button(organizations_path)
-    assert page.has_link? "Finance"
+    assert_submit_button(/Finance/i)
+    assert page.has_link? 'Primary'
   end
 
   # content - click Assign All
@@ -35,9 +38,9 @@ class OrganizationTest < ActionDispatch::IntegrationTest
     assert_new_button(organizations_path,"New Organization",new_organization_path)
     fill_in "organization_name", :with => "Finance"
     click_button "Submit"
-    assert_equal step2_organization_path(Organization.order(:id).last), current_path, "redirect path #{step2_organization_path(Organization.order(:id).last)} was expected but it was #{current_path}"
+    assert_current_path step2_organization_path(Organization.unscoped.order(:id).last)
     click_link "Assign All"
-    assert_equal organizations_path, current_path, "redirect path #{organizations_path} was expected but it was #{current_path}"
+    assert_current_path organizations_path
     assert page.has_link? "Finance"
   end
 
@@ -46,9 +49,9 @@ class OrganizationTest < ActionDispatch::IntegrationTest
     assert_new_button(organizations_path,"New Organization",new_organization_path)
     fill_in "organization_name", :with => "Finance"
     click_button "Submit"
-    assert_equal step2_organization_path(Organization.order(:id).last), current_path, "redirect path #{step2_organization_path(Organization.order(:id).last)} was expected but it was #{current_path}"
+    assert_current_path step2_organization_path(Organization.unscoped.order(:id).last)
     click_link "Manually Assign"
-    assert_equal assign_hosts_organization_path(Organization.order(:id).last), current_path, "redirect path #{assign_hosts_organization_path(Organization.order(:id).last)} was expected but it was #{current_path}"
+    assert_current_path assign_hosts_organization_path(Organization.unscoped.order(:id).last)
     assert_submit_button(organizations_path, "Assign to Organization")
     assert page.has_link? "Finance"
   end
@@ -58,14 +61,13 @@ class OrganizationTest < ActionDispatch::IntegrationTest
     assert_new_button(organizations_path,"New Organization",new_organization_path)
     fill_in "organization_name", :with => "Finance"
     click_button "Submit"
-    assert_equal step2_organization_path(Organization.order(:id).last), current_path, "redirect path #{step2_organization_path(Organization.order(:id).last)} was expected but it was #{current_path}"
+    assert_current_path step2_organization_path(Organization.unscoped.order(:id).last)
     click_link "Proceed to Edit"
-    assert_equal edit_organization_path(Organization.order(:id).last), current_path, "redirect path #{edit_organization_path(Organization.order(:id).last)} was expected but it was #{current_path}"
+    assert_current_path edit_organization_path(Organization.unscoped.order(:id).last)
     assert page.has_selector?('h1', :text => "Edit"), "Edit was expected in the <h1> tag, but was not found"
   end
 
   # PENDING
   # test "mismatches report" do
   # end
-
 end

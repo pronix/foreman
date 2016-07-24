@@ -1,8 +1,7 @@
 require 'test_helper'
 
 class Api::V2::AuthSourceLdapsControllerTest < ActionController::TestCase
-
-  valid_attrs = { :name => 'ldap2', :host => 'ldap2' }
+  valid_attrs = { :name => 'ldap2', :host => 'ldap2', :server_type => 'posix' }
 
   test "should get index" do
     get :index, { }
@@ -23,11 +22,11 @@ class Api::V2::AuthSourceLdapsControllerTest < ActionController::TestCase
     assert_difference('AuthSourceLdap.count', 1) do
       post :create, { :auth_source_ldap => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update auth_source_ldap" do
-    put :update, { :id => auth_sources(:one).to_param, :auth_source_ldap => { } }
+    put :update, { :id => auth_sources(:one).to_param, :auth_source_ldap => valid_attrs }
     assert_response :success
   end
 
@@ -40,4 +39,18 @@ class Api::V2::AuthSourceLdapsControllerTest < ActionController::TestCase
     assert_response :success
   end
 
+  test "LDAP testing success" do
+    AuthSourceLdap.any_instance.stubs(:test_connection).returns(:message => 'success')
+    put :test, { :id => auth_sources(:one).to_param }
+    assert_response :success
+    show_response = ActiveSupport::JSON.decode(@response.body)
+    assert !show_response.empty?
+  end
+
+  test "LDAP testing failed" do
+    AuthSourceLdap.any_instance.stubs(:test_connection).raises(Foreman::Exception)
+    put :test, { :id => auth_sources(:one).to_param }
+    show_response = ActiveSupport::JSON.decode(@response.body)
+    assert !show_response[:success]
+  end
 end

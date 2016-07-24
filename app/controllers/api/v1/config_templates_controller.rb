@@ -2,10 +2,13 @@ module Api
   module V1
     class ConfigTemplatesController < V1::BaseController
       include Foreman::Renderer
+      include Foreman::Controller::ProvisioningTemplates
 
-      before_filter :find_resource, :only => [:show, :update, :destroy]
-      before_filter :handle_template_upload, :only => [:create, :update]
-      before_filter :process_template_kind, :only => [:create, :update]
+      before_action :deprecated
+
+      before_action :find_resource, :only => %w{show update destroy}
+      before_action :handle_template_upload, :only => [:create, :update]
+      before_action :process_template_kind, :only => [:create, :update]
 
       api :GET, "/config_templates/", "List templates"
       param :search, String, :desc => "filter results"
@@ -14,7 +17,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @config_templates = ConfigTemplate.search_for(*search_options).paginate(paginate_options).
+        @config_templates = ProvisioningTemplate.
+          authorized(:view_provisioning_templates).
+          search_for(*search_options).paginate(paginate_options).
           includes(:operatingsystems, :template_combinations, :template_kind)
       end
 
@@ -37,7 +42,7 @@ module Api
       end
 
       def create
-        @config_template = ConfigTemplate.new(params[:config_template])
+        @config_template = ProvisioningTemplate.new(params[:config_template])
         process_response @config_template.save
       end
 
@@ -61,7 +66,7 @@ module Api
       param :version, String, :desc => "template version"
 
       def revision
-        audit = Audit.find(params[:version])
+        audit = Audit.authorized(:view_audit_logs).find(params[:version])
         render :json => audit.revision.template
       end
 
@@ -75,28 +80,23 @@ module Api
       api :GET, "/config_templates/build_pxe_default", "Change the default PXE menu on all configured TFTP servers"
 
       def build_pxe_default
-        status, msg = ConfigTemplate.build_pxe_default(self)
+        status, msg = ProvisioningTemplate.authorized(:deploy_provisioning_templates).build_pxe_default(self)
         render :json => msg, :status => status
       end
 
       private
 
-      # convert the file upload into a simple string to save in our db.
-      def handle_template_upload
-        return unless params[:config_template] and (t=params[:config_template][:template])
-        params[:config_template][:template] = t.read if t.respond_to?(:read)
+      def type_name_singular
+        @type_name_singular ||= resource_name
       end
 
-      def default_template_url template, hostgroup
-        url_for :only_path => false, :action => :template, :controller => '/unattended',
-                :id        => template.name, :hostgroup => hostgroup.name
+      def resource_class
+        ProvisioningTemplate
       end
 
-      def process_template_kind
-        return unless params[:config_template] and (tk=params[:config_template].delete(:template_kind))
-        params[:config_template][:template_kind_id] = tk[:id]
+      def deprecated
+        Foreman::Deprecation.api_deprecation_warning("Config templates were renamed to provisioning templates")
       end
-
     end
   end
 end

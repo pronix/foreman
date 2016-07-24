@@ -1,12 +1,12 @@
 class AddFromAndToRangesToSubnets < ActiveRecord::Migration
-  def self.up
-    add_column :subnets, :from, :string
-    add_column :subnets, :to, :string
+  def up
+    add_column :subnets, :from, :string, :limit => 255
+    add_column :subnets, :to, :string, :limit => 255
     remove_column :subnets, :ranges
   end
 
-  def self.down
-    add_column :subnets, :ranges, :string
+  def down
+    add_column :subnets, :ranges, :string, :limit => 255
     remove_column :subnets, :to
     remove_column :subnets, :from
   end

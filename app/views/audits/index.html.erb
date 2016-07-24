@@ -1,6 +1,5 @@
 <% title _("Audits") %>
-
+<% title_actions documentation_button('4.1.4Auditing') %>
 <%= render :partial => 'list', :locals =>{:audits => @audits}%>
 
-<%= page_entries_info @audits %>
-<%= will_paginate @audits %>
+<%= will_paginate_with_info @audits %>

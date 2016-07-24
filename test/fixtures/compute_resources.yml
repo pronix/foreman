@@ -26,12 +26,11 @@ yourcompute:
   password: 1234567
   uuid: yourcompute
   type: Foreman::Model::Libvirt
-  users: restricted
 
 openstack:
   name: openstackcr
   description: computeresource
-  url: test:///default
+  url: test:///default/v2.0
   user: MyString
   password: 1234567
   uuid: yourcompute
@@ -45,3 +44,39 @@ ec2:
   password: MyString
   uuid: 234234234324
   type: Foreman::Model::EC2
+
+ec2-another:
+  name: another-ec2
+  description: yourcompute
+  url: eu-west-1
+  user: MyString
+  password: MyString
+  uuid: 234234234324
+  type: Foreman::Model::EC2
+
+gce:
+  name: gce123
+  description: yourcompute
+  url: us-central1-a
+  user: MyString
+  password: MyString
+  uuid: 78787878787
+  type: Foreman::Model::GCE
+
+ovirt:
+  name: Ovirt
+  description: ovirt resource
+  url: https://myovirt/api
+  user: MyString
+  password: 12345
+  uuid: 1234567891011
+  type: Foreman::Model::Ovirt
+
+vmware:
+  name: Vmware
+  description: vmware resource
+  url: https://myvmware/api
+  user: MyString
+  password: 123456
+  uuid: 1234567891011
+  type: Foreman::Model::Vmware

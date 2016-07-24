@@ -1,42 +1,35 @@
 require 'test_helper'
 
 class DomainsControllerTest < ActionController::TestCase
-  def test_index
-    get :index, {}, set_session_user
-    assert_template 'index'
+  setup do
+    @model = Domain.first
   end
 
-  def test_new
-    get :new, {}, set_session_user
-    assert_template 'new'
-  end
+  basic_index_test
+  basic_new_test
+  basic_edit_test
 
   def test_create_invalid
     Domain.any_instance.stubs(:valid?).returns(false)
-    post :create, {}, set_session_user
+    post :create, {:domain => {:name => nil}}, set_session_user
     assert_template 'new'
   end
 
   def test_create_valid
     Domain.any_instance.stubs(:valid?).returns(true)
-    post :create, {}, set_session_user
+    post :create, {:domain => {:name => "MyDomain"}}, set_session_user
     assert_redirected_to domains_url
-  end
-
-  def test_edit
-    get :edit, {:id => Domain.first.name}, set_session_user
-    assert_template 'edit'
   end
 
   def test_update_invalid
     Domain.any_instance.stubs(:valid?).returns(false)
-    put :update, {:id => Domain.first.name}, set_session_user
+    put :update, {:id => Domain.first.to_param, :domain => {:name => Domain.first.name }}, set_session_user
     assert_template 'edit'
   end
 
   def test_update_valid
     Domain.any_instance.stubs(:valid?).returns(true)
-    put :update, {:id => Domain.first.name}, set_session_user
+    put :update, {:id => Domain.first.to_param, :domain => {:name => Domain.first.name }}, set_session_user
     assert_redirected_to domains_url
   end
 
@@ -45,14 +38,9 @@ class DomainsControllerTest < ActionController::TestCase
     domain.hosts.clear
     domain.hostgroups.clear
     domain.subnets.clear
-    delete :destroy, {:id => domain.name}, set_session_user
+    delete :destroy, {:id => domain}, set_session_user
     assert_redirected_to domains_url
     assert !Domain.exists?(domain.id)
-  end
-
-  def setup_user
-    @request.session[:user] = users(:one).id
-    users(:one).roles       = [Role.find_by_name('Anonymous'), Role.find_by_name('Viewer')]
   end
 
   def user_with_viewer_rights_should_fail_to_edit_a_domain
@@ -65,5 +53,20 @@ class DomainsControllerTest < ActionController::TestCase
     setup_users
     get :index
     assert_response :success
+  end
+
+  test 'user with view_params rights should see parameters in a domain' do
+    setup_user "edit", "domains"
+    setup_user "view", "params"
+    domain = FactoryGirl.create(:domain, :with_parameter)
+    get :edit, {:id => domain.id}, set_session_user.merge(:user => users(:one).id)
+    assert_not_nil response.body['Parameter']
+  end
+
+  test 'user without view_params rights should not see parameters in a domain' do
+    setup_user "edit", "domains"
+    domain = FactoryGirl.create(:domain, :with_parameter)
+    get :edit, {:id => domain.id}, set_session_user.merge(:user => users(:one).id)
+    assert_nil response.body['Parameter']
   end
 end

@@ -1,10 +1,10 @@
 class CreateNics < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :nics do |t|
-      t.string :mac
-      t.string :ip
-      t.string :type
-      t.string :name
+      t.string :mac, :limit => 255
+      t.string :ip, :limit => 255
+      t.string :type, :limit => 255
+      t.string :name, :limit => 255
       t.references :host
       t.references :subnet
       t.references :domain
@@ -36,10 +36,10 @@ class CreateNics < ActiveRecord::Migration
     remove_columns :hosts, :sp_mac, :sp_ip, :sp_name, :sp_subnet_id
   end
 
-  def self.down
+  def down
     add_column :hosts, :sp_mac, :string, :limit => 17, :default => ""
     add_column :hosts, :sp_ip, :string, :limit => 15, :default => ""
-    add_column :hosts, :sp_name, :string, :default => ""
+    add_column :hosts, :sp_name, :string, :limit => 255, :default => ""
     add_column :hosts, :sp_subnet_id, :integer
 
     Nic::BMC.all.each do |bmc|

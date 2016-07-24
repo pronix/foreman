@@ -3,66 +3,23 @@ require 'test_helper'
 class PuppetFactImporterTest < ActiveSupport::TestCase
   attr_reader :host, :importer
   setup do
-    disable_orchestration
-    User.current = User.admin
-    @host        = hosts(:one)
+    @host = FactoryGirl.create(:host)
+    FactoryGirl.create(:fact_value, :value => '2.6.9',:host => @host,
+                       :fact_name => FactoryGirl.create(:fact_name, :name => 'kernelversion'))
+    FactoryGirl.create(:fact_value, :value => '10.0.19.33',:host => @host,
+                       :fact_name => FactoryGirl.create(:fact_name, :name => 'ipaddress'))
   end
 
-  test 'importer adds new facts' do
+  test 'importer imports everything as strings' do
+    import 'kernelversion' => '2.6.9', 'vda_size' => 4242
     assert_equal '2.6.9', value('kernelversion')
-    assert_equal '10.0.19.33', value('ipaddress')
-    import 'foo' => 'bar', 'kernelversion' => '2.6.9', 'ipaddress' => '10.0.19.33'
-    assert_equal 'bar', value('foo')
-    assert_equal '2.6.9', value('kernelversion')
-    assert_equal 0, importer.counters[:deleted]
-    assert_equal 0, importer.counters[:updated]
-    assert_equal 1, importer.counters[:added]
+    assert_equal '4242', value('vda_size')
   end
 
-  test 'importer removes deleted facts' do
-    import 'ipaddress' => '10.0.19.33'
-    assert_nil value('kernelversion')
-
-    assert_equal 1, importer.counters[:deleted]
-    assert_equal 0, importer.counters[:updated]
-    assert_equal 0, importer.counters[:added]
-  end
-
-  test 'importer updates fact values' do
-    assert_equal '2.6.9', value('kernelversion')
-    assert_equal '10.0.19.33', value('ipaddress')
-    import 'kernelversion' => '3.8.11', 'ipaddress' => '10.0.19.33'
-    assert_equal '3.8.11', value('kernelversion')
-
-    assert_equal 0, importer.counters[:deleted]
-    assert_equal 1, importer.counters[:updated]
-    assert_equal 0, importer.counters[:added]
-  end
-
-  test "importer shouldn't set nil values" do
-    assert_equal '2.6.9', value('kernelversion')
-    assert_equal '10.0.19.33', value('ipaddress')
-    import('kernelversion' => nil, 'ipaddress' => '10.0.19.33')
-    assert_nil value('kernelversion')
-    assert_equal '10.0.19.33', value('ipaddress')
-
-    assert_equal 1, importer.counters[:deleted]
-    assert_equal 0, importer.counters[:updated]
-    assert_equal 0, importer.counters[:added]
-  end
-
-  test "importer adds, removes and deletes facts" do
-    assert_equal '2.6.9', value('kernelversion')
-    assert_equal '10.0.19.33', value('ipaddress')
-    import('kernelversion' => nil, 'ipaddress' => '10.0.19.5', 'uptime' => '1 picosecond')
-    assert_nil value('kernelversion')
-    assert_equal '10.0.19.5', value('ipaddress')
-    assert_equal '1 picosecond', value('uptime')
-
-    assert_equal 1, importer.counters[:deleted]
-    assert_equal 1, importer.counters[:updated]
-    assert_equal 1, importer.counters[:added]
-
+  test 'importer imports structured facts' do
+    import({"system_uptime"=>{"seconds"=>14911897, "hours"=>4142, "days"=>172, "uptime"=>"172 days"}})
+    assert_nil value('system_uptime')
+    assert_equal '172 days', value('system_uptime::uptime')
   end
 
   def import(facts)
@@ -70,7 +27,7 @@ class PuppetFactImporterTest < ActiveSupport::TestCase
     importer.import!
   end
 
-  def value fact
+  def value(fact)
     FactValue.joins(:fact_name).where(:host_id => @host.id, :fact_names => { :name => fact }).first.try(:value)
   end
 end

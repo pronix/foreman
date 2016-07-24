@@ -1,10 +1,12 @@
-<% title_actions link_to(_("New Host"), new_host_path)%>
-<% title _("Hosts") %>
-<div id="welcome">
-  <p>
-  <%= _("You don't seem to have any Hosts, for more information see") %>
-  <%= link_to _("this page"), root_path %>
-  </p>
-
-  <p><%= _('This page will self destruct once data comes in.') %></p>
+<% content_for(:title, _("Hosts")) %>
+<div class="blank-slate-pf">
+  <div class="blank-slate-pf-icon">
+    <%= icon_text("tasks", "", :kind => "fa") %>
+  </div>
+  <h1><%= _('Hosts') %></h1>
+  <p><%= _("You don't have any visible hosts. Hosts can be added and provisioned from Foreman, or configured to report to Foreman.") %></p>
+  <p><%= link_to _('Learn more about this in the documentation.'), documentation_url("4.4Provisioning")%></p>
+  <div class="blank-slate-pf-main-action">
+      <%= new_link(_('New Host'), {}, { :class => "btn-lg" }) %>
+  </div>
 </div>

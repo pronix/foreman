@@ -1,16 +1,20 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class TopBarTest < ActionDispatch::IntegrationTest
+class TopBarIntegrationTest < ActionDispatch::IntegrationTest
+  def setup
+    FactoryGirl.create(:fact_value, :value => '2.6.9',:host => FactoryGirl.create(:host),
+                       :fact_name => FactoryGirl.create(:fact_name))
+  end
 
   test "top bar links" do
     visit root_path
-    within("div.logo-bar") do
+    within("div.navbar-outer") do
       assert page.has_link?("Foreman", :href => "/")
     end
     within("div.navbar-inner") do
-      assert page.has_link?("Dashboard", :href => "/dashboard")
+      assert page.has_link?("Dashboard", :href => "/")
       assert page.has_link?("All hosts", :href => "/hosts")
-      assert page.has_link?("Reports", :href => "/reports?search=eventful+%3D+true")
+      assert page.has_link?("Config management", :href => "/config_reports?search=eventful+%3D+true")
       assert page.has_link?("Facts", :href => "/fact_values")
       assert page.has_link?("Audits", :href => "/audits")
       assert page.has_link?("Statistics", :href => "/statistics")
@@ -67,5 +71,4 @@ class TopBarTest < ActionDispatch::IntegrationTest
   end
 
   #PENDING - click on Menu Bar js
-
 end

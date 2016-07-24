@@ -12,7 +12,7 @@ module Foreman
     module ClassMethods
       # ensures that the correct STI object is created when :type is passed.
       def new_with_cast(*attributes, &block)
-        if (h = attributes.first).is_a?(Hash) && (type = h.delete(:type)) && type.length > 0
+        if (h = attributes.first).is_a?(Hash) && (type = h.with_indifferent_access.delete(:type)) && type.length > 0
           if (klass = type.constantize) != self
             raise "Invalid type #{type}" unless klass <= self
             return klass.new(*attributes, &block)
@@ -26,7 +26,7 @@ module Foreman
     def save_with_type(*args)
       type_changed = self.type_changed?
       self.class.instance_variable_set("@finder_needs_type_condition", :false) if type_changed
-      value = save_without_type(*args)
+      save_without_type(*args)
     ensure
       self.class.instance_variable_set("@finder_needs_type_condition", :true) if type_changed
     end

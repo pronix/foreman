@@ -8,14 +8,39 @@ module Orchestration
     attr_reader :old
 
     # save handles both creation and update of hosts
-    before_save :on_save
+    around_save :around_save_orchestration
     after_commit :post_commit
     after_destroy :on_destroy
   end
 
+  module ClassMethods
+    def rebuild_methods
+      @rebuild_methods || {}
+    end
+
+    def rebuild_methods=(methods)
+      @rebuild_methods = methods || {}
+    end
+
+    def register_rebuild(method, pretty_name)
+      @rebuild_methods ||= {}
+      fail "Method :#{method} is already registered, choose different name for your method" if @rebuild_methods[method]
+      @rebuild_methods.merge!(method => pretty_name)
+    end
+  end
+
   protected
-  def on_save
+
+  def around_save_orchestration
     process :queue
+
+    begin
+      yield
+    rescue ActiveRecord::ActiveRecordError => e
+      Foreman::Logging.exception "Rolling back due to exception during save", e
+      fail_queue queue
+      raise e
+    end
   end
 
   def post_commit
@@ -23,18 +48,23 @@ module Orchestration
   end
 
   def on_destroy
-    errors.empty? ? process(:queue) : false
+    errors.empty? ? process(:queue) : rollback
   end
 
   def rollback
     raise ActiveRecord::Rollback
   end
 
-  # log and add to errors
-  def failure msg, backtrace=nil, dest = :base
-    logger.warn(backtrace ? msg + backtrace.join("\n") : msg)
-    errors.add dest, msg
+  # Log and add error to model
+  def failure(message, exception = nil, dest = :base)
+    log_failure(message, exception)
+    errors.add(dest, message)
     false
+  end
+
+  def log_failure(message, exception)
+    return Foreman::Logging.exception(message, exception) if exception.present?
+    logger.warn(message)
   end
 
   public
@@ -43,7 +73,7 @@ module Orchestration
   # after validation callbacks status, as rails by default does
   # not care about their return status.
   def valid?(context = nil)
-    setup_clone
+    setup_clone if SETTINGS[:unattended]
     super
     orchestration_errors?
   end
@@ -60,17 +90,30 @@ module Orchestration
     @record_conflicts ||= []
   end
 
+  def skip_orchestration!
+    @skip_orchestration = true
+  end
+
+  def enable_orchestration!
+    @skip_orchestration = false
+  end
+
+  def skip_orchestration?
+    # The orchestration should be disabled in tests in order to avoid side effects.
+    # If a test needs to enable orchestration, it should be done explicitly by stubbing
+    # this method.
+    return true if Rails.env.test?
+    !!@skip_orchestration
+  end
+
   private
 
-  def proxy_error e
-    e.respond_to?(:message)  ? e.message : e
-  end
   # Handles the actual queue
   # takes care for running the tasks in order
   # if any of them fail, it rollbacks all completed tasks
   # in order not to keep any left overs in our proxies.
-  def process queue_name
-    return true if Rails.env == "test"
+  def process(queue_name)
+    return true if skip_orchestration?
 
     # queue is empty - nothing to do.
     q = send(queue_name)
@@ -86,30 +129,27 @@ module Orchestration
       update_cache
       begin
         task.status = execute({:action => task.action}) ? "completed" : "failed"
-
       rescue Net::Conflict => e
         task.status = "conflict"
-        record_conflicts << e
+        add_conflict(e)
         failure e.message, nil, :conflict
-      #TODO: This is not a real error, but at the moment the proxy / foreman lacks better handling
-      # of the error instead of explode.
-      rescue Net::LeaseConflict => e
-        task.status = "failed"
-        failure _("DHCP has a lease at %s") % e, e.backtrace
-      rescue RestClient::Exception => e
-        task.status = "failed"
-        failure _("%{task} task failed with the following error: %{e}") % { :task => task.name, :e => proxy_error(e) }, e.backtrace
       rescue => e
         task.status = "failed"
-        failure _("%{task} task failed with the following error: %{e}") % { :task => task.name, :e => e }, e.backtrace
+        failure _("%{task} task failed with the following error: %{e}") % { :task => task.name, :e => e }, e
       end
     end
 
     update_cache
     # if we have no failures - we are done
-    return true if q.failed.empty? and q.pending.empty? and q.conflict.empty? and orchestration_errors?
+    return true if q.failed.empty? && q.pending.empty? && q.conflict.empty? && orchestration_errors?
 
     logger.warn "Rolling back due to a problem: #{q.failed + q.conflict}"
+    fail_queue(q)
+
+    rollback
+  end
+
+  def fail_queue(q)
     q.pending.each{ |task| task.status = "canceled" }
 
     # handle errors
@@ -121,15 +161,17 @@ module Orchestration
         execute({:action => task.action, :rollback => true})
       rescue => e
         # if the operation failed, we can just report upon it
-        failure _("Failed to perform rollback on %{task} - %{e}") % { :task => task.name, :e => e }
+        failure _("Failed to perform rollback on %{task} - %{e}") % { :task => task.name, :e => e }, e
       end
     end
-
-    rollback
   end
 
-  def execute opts = {}
-    obj, met = opts[:action]
+  def add_conflict(e)
+    @record_conflicts << e
+  end
+
+  def execute(opts = {})
+    obj, met, param = opts[:action]
     rollback = opts[:rollback] || false
     # at the moment, rollback are expected to replace set with del in the method name
     if rollback
@@ -145,27 +187,11 @@ module Orchestration
       met = met.to_sym
     end
     if obj.respond_to?(met,true)
+      param.nil? || (return obj.send(met, param))
       return obj.send(met)
     else
       failure _("invalid method %s") % met
       raise ::Foreman::Exception.new(N_("invalid method %s"), met)
-    end
-  end
-
-  # we keep the before update host object in order to compare changes
-  def setup_clone
-    return if new_record?
-    @old = dup
-    for key in (changed_attributes.keys - ["updated_at"])
-      @old.send "#{key}=", changed_attributes[key]
-      # At this point the old cached bindings may still be present so we force an AR association reload
-      # This logic may not work or be required if we switch to Rails 3
-      if (match = key.match(/\A(.*)_id\Z/))
-        name = match[1].to_sym
-        next if name == :owner # This does not work for the owner association even from the console
-        self.send(name, true) if (send(name) and send(name).id != @attributes[key])
-        old.send(name, true)  if (old.send(name) and old.send(name).id != old.attributes[key])
-      end
     end
   end
 
@@ -176,5 +202,4 @@ module Orchestration
   def update_cache
     Rails.cache.write(progress_report_id, (queue.all + post_queue.all).to_json, :expires_in => 5.minutes)
   end
-
 end

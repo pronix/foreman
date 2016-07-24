@@ -2,11 +2,10 @@ class EnvironmentsController < ApplicationController
   include Foreman::Controller::Environments
   include Foreman::Controller::AutoCompleteSearch
 
-  before_filter :find_by_name, :only => %w{edit update destroy}
+  before_action :find_resource, :only => [:edit, :update, :destroy]
 
   def index
-    @environments = Environment.search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
-    @counter      = Host.group(:environment_id).where(:environment_id => @environments.pluck(:id)).count
+    @environments = resource_base.search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
   end
 
   def new
@@ -40,5 +39,4 @@ class EnvironmentsController < ApplicationController
       process_error
     end
   end
-
 end

@@ -1,8 +1,5 @@
 class AuthSourceExternal < AuthSource
-
-  def authenticate(login, password)
-    raise NotImplementedError, "#{__class__} does not support authenticate"
-  end
+  def authenticate(login, password); end
 
   def auth_method_name
     "EXTERNAL"

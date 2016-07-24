@@ -1,14 +1,19 @@
-group :assets do
-  gem 'sass-rails', '~> 3.2.3'
-  gem 'coffee-rails', '~> 3.2.1'
-  gem 'uglifier', '>= 1.0.3'
-  gem "jquery-rails", "2.0.3"
-  gem 'jquery-ui-rails'
-  gem "therubyracer", '0.11.3', :require => 'v8'
-  gem "twitter-bootstrap-rails", '2.2.6'
-  gem "spice-html5-rails"
-  gem "flot-rails", '0.0.3'
-  gem "quiet_assets"
-  gem 'gettext_i18n_rails_js', '>= 0.0.8'
-  gem 'gettext', '~> 2.0', :require => false
-end
+gem 'jquery-rails', '~> 3.1'
+gem 'jquery-turbolinks', '~> 2.1'
+gem 'jquery-ui-rails', '< 5.0.0'
+gem 'autoprefixer-rails', '~> 5.2'
+gem 'patternfly-sass', '~> 2.7'
+gem 'multi-select-rails', '~> 0.9'
+gem 'gridster-rails', '~> 0.5'
+gem 'select2-rails', '3.5.10'
+gem 'underscore-rails', '~> 1.8'
+gem 'gettext_i18n_rails_js', '~> 1.0'
+gem 'execjs', '>= 1.4.0', '< 3.0'
+gem 'ace-rails-ap', '~> 4.0.0'
+gem 'flot-rails', '0.0.3'
+gem 'uglifier', '>= 1.0.3'
+gem 'sass-rails', '~> 5.0'
+gem 'spice-html5-rails', '~> 0.1.5'
+gem 'quiet_assets', '~> 1.0'
+gem 'jquery_pwstrength_bootstrap_4', :require => 'jquery_pwstrength_bootstrap'
+gem 'ipaddrjs-rails', '~> 1.1.1'

@@ -1,10 +1,13 @@
 class Suse < Operatingsystem
-
   PXEFILES = {:kernel => "linux", :initrd => "initrd"}
 
-  # Override the class representation, as this breaks many rails helpers
-  def class
-    Operatingsystem
+  class << self
+    delegate :model_name, :to => :superclass
+  end
+
+  # Simple output of the media url
+  def mediumpath(host)
+    medium_uri(host).to_s
   end
 
   def pxe_type
@@ -19,4 +22,17 @@ class Suse < Operatingsystem
     pxedir + "/" + PXEFILES[file]
   end
 
+  def display_family
+    "SUSE"
+  end
+
+  def self.shorten_description(description)
+    return "" if description.blank?
+    s=description
+    s.gsub!('SUSE Linux Enterprise Server','SLES')
+    s.gsub!(/\(.+?\)/,'')
+    s.squeeze! " "
+    s.strip!
+    s.blank? ? description : s
+  end
 end

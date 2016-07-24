@@ -73,7 +73,6 @@ class MenuMapperTest < ActiveSupport::TestCase
       assert_not_nil root.children[position]
       assert_equal name, root.children[position].name
     end
-
   end
 
   def test_push_before
@@ -90,7 +89,6 @@ class MenuMapperTest < ActiveSupport::TestCase
       assert_not_nil root.children[position]
       assert_equal name, root.children[position].name
     end
-
   end
 
   def test_push_after
@@ -107,7 +105,6 @@ class MenuMapperTest < ActiveSupport::TestCase
       assert_not_nil root.children[position]
       assert_equal name, root.children[position].name
     end
-
   end
 
   def test_push_last
@@ -124,7 +121,6 @@ class MenuMapperTest < ActiveSupport::TestCase
       assert_not_nil root.children[position]
       assert_equal name, root.children[position].name
     end
-
   end
 
   def test_exists_for_child_node
@@ -165,6 +161,18 @@ class MenuMapperTest < ActiveSupport::TestCase
     assert_not_nil menu_mapper.delete(:test_overview)
 
     assert_nil menu_mapper.find(:test_overview)
+  end
+
+  def test_delete_in_sub_menu
+    menu_mapper = Menu::Manager::Mapper.new(:test_menu, {})
+    menu_mapper.sub_menu :test_sub_menu, :caption => "Sub Menu" do
+      menu_mapper.item :test_sub_overview, :url_hash => { :controller => 'hosts', :action => 'show'}
+    end
+    assert_not_nil menu_mapper.find(:test_sub_overview)
+
+    assert_not_nil menu_mapper.delete(:test_sub_overview)
+
+    assert_nil menu_mapper.find(:test_sub_overview)
   end
 
   def test_delete_missing

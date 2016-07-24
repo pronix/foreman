@@ -1,7 +1,6 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class UserTest < ActionDispatch::IntegrationTest
-
+class UserIntegrationTest < ActionDispatch::IntegrationTest
   test "index page" do
     assert_index_page(users_path,"Users","New User")
   end
@@ -14,4 +13,15 @@ class UserTest < ActionDispatch::IntegrationTest
     assert page.has_link? 'user12345'
   end
 
+  context "without automatic login" do
+    def login_admin; end
+
+    test "login" do
+      visit "/"
+      fill_in "login_login", :with => users(:admin).login
+      fill_in "login_password", :with => "secret"
+      click_button "Login"
+      assert_current_path root_path
+    end
+  end
 end

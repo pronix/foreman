@@ -1,15 +1,15 @@
 class CreateKeyPairs < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :key_pairs do |t|
       t.text :secret
       t.integer :compute_resource_id
-      t.string :name
+      t.string :name, :limit => 255
 
       t.timestamps
     end
   end
 
-  def self.down
+  def down
     drop_table :key_pairs
   end
 end

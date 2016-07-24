@@ -11,7 +11,7 @@ namespace :models  do
   task :consolidate, [:dryrun] => :environment do |t, args|
     dryrun = args.dryrun
     # Give ourselves permission to edit stuff
-    User.current = User.find_by_login "admin"
+    User.current = User.anonymous_admin
 
     map_file = "config/model.mappings"
     if File.exist? map_file
@@ -24,7 +24,7 @@ namespace :models  do
       names = mappings.map{|m| m["name"]}
       if names.count != names.uniq.count
         puts "There are duplicate entries in the the mapping file: " + (names - names.uniq).to_sentence
-        exit -1
+        exit(-1)
       end
       consolidate mappings, dryrun
     else

@@ -1,5 +1,5 @@
 class FactsController < ApplicationController
-  before_filter :valid_request?
+  before_action :valid_request?
 
   def index
     render :json => FactName.no_timestamp_fact
@@ -21,5 +21,4 @@ class FactsController < ApplicationController
   def valid_request?
     not_found unless api_request?
   end
-
 end

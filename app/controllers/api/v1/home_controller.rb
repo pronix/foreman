@@ -1,7 +1,7 @@
 module Api
   module V1
     class HomeController < V1::BaseController
-      before_filter :require_admin
+      before_action :require_admin, :only => [:index]
 
       api :GET, "/", "Show available links."
 
@@ -14,12 +14,6 @@ module Api
 
       def status
       end
-
-      def route_error
-        render_error 'route_error', :status => :not_found
-      end
-
     end
   end
 end
-

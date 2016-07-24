@@ -1,16 +1,22 @@
 module PuppetclassesHelper
   include PuppetclassesAndEnvironmentsHelper
   include LookupKeysHelper
-  def rdoc_classes_path environment, name
+  def rdoc_classes_path(environment, name)
     klass = name.gsub('::', '/')
     "puppet/rdoc/#{environment}/classes/#{klass}.html"
   end
 
-  def host_counter klass
-    # workaround for sqlite bug
-    # https://rails.lighthouseapp.com/projects/8994-ruby-on-rails/tickets/4544-rails3-activerecord-sqlite3-lost-column-type-when-using-views#ticket-4544-2
-    @host_counter[klass.id.to_s] || @host_counter[klass.id.to_i] || 0
-  rescue
-    _("N/A")
+  def overridden?(puppetclass)
+    puppetclass.class_params.present? && puppetclass.class_params.map(&:override).all?
+  end
+
+  def puppetclass_group_with_icon(list, selected)
+    css_options = if (list.last - selected).empty?
+                    { :class => 'hide' }
+                  else
+                    {}
+                  end
+    link_to_function(icon_text('plus', list.first, css_options),
+                     "expandClassList($(this), '#pc_#{list.first}')")
   end
 end

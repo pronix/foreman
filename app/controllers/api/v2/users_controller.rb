@@ -1,105 +1,106 @@
 module Api
   module V2
     class UsersController < V2::BaseController
+      wrap_parameters User, :include => User.accessible_attributes
 
+      before_action :find_resource, :only => %w{show update destroy}
+      # find_resource needs to be defined prior to UsersMixin is included, it depends on @user
+      include Foreman::Controller::UsersMixin
       include Api::Version2
       include Api::TaxonomyScope
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_optional_nested_object
 
-      api :GET, "/users/", "List all users."
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/users/", N_("List all users")
+      api :GET, "/auth_source_ldaps/:auth_source_ldap_id/users", N_("List all users for LDAP authentication source")
+      api :GET, "/usergroups/:usergroup_id/users", N_("List all users for user group")
+      api :GET, "/roles/:role_id/users", N_("List all users for role")
+      api :GET, "/locations/:location_id/users", N_("List all users for location")
+      api :GET, "/organizations/:organization_id/users", N_("List all users for organization")
+      param :auth_source_ldap_id, String, :desc => N_("ID of LDAP authentication source")
+      param :usergroup_id, String, :desc => N_("ID of user group")
+      param :role_id, String, :desc => N_("ID of role")
+      param_group :taxonomy_scope, ::Api::V2::BaseController
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @users = User.search_for(*search_options).paginate(paginate_options)
+        @users = resource_scope_for_index
       end
 
-      api :GET, "/users/:id/", "Show an user."
+      api :GET, "/users/:id/", N_("Show a user")
       param :id, String, :required => true
 
       def show
-        @user
       end
 
-      api :POST, "/users/", "Create an user."
-      # TRANSLATORS: API documentation - do not translate
-      description <<-DOC
-        Adds role 'Anonymous' to the user by default
-      DOC
-      param :user, Hash, :required => true do
-        param :login, String, :required => true
-        param :firstname, String, :required => false
-        param :lastname, String, :required => false
-        param :mail, String, :required => true
-        param :admin, :bool, :required => false, :desc => "Is an admin account?"
-        param :password, String, :required => true
-        param :auth_source_id, Integer, :required => true
+      def_param_group :user do
+        param :user, Hash, :required => true, :action_aware => true do
+          param :login, String, :required => true
+          param :firstname, String, :required => false
+          param :lastname, String, :required => false
+          param :mail, String, :required => true
+          param :admin, :bool, :required => false, :desc => N_("is an admin account")
+          param :password, String, :required => true
+          param :default_location_id, Integer if SETTINGS[:locations_enabled]
+          param :default_organization_id, Integer if SETTINGS[:organizations_enabled]
+          param :auth_source_id, Integer, :required => true
+          param :timezone, ActiveSupport::TimeZone.zones_map.keys, :required => false, :desc => N_("User's timezone")
+          param :locale, FastGettext.available_locales, :required => false, :desc => N_("User's preferred locale")
+          param_group :taxonomies, ::Api::V2::BaseController
+        end
       end
+
+      api :POST, "/users/", N_("Create a user")
+      description <<-DOC
+        Adds role 'Default role' to the user by default
+      DOC
+      param_group :user, :as => :create
 
       def create
-        admin = params[:user].delete(:admin)
-        @user = User.new(params[:user]) { |u| u.admin = admin }
         if @user.save
-          @user.roles << Role.find_by_name("Anonymous") unless @user.roles.map(&:name).include? "Anonymous"
           process_success
         else
           process_resource_error
         end
       end
 
-      api :PUT, "/users/:id/", "Update an user."
-      # TRANSLATORS: API documentation - do not translate
+      api :PUT, "/users/:id/", N_("Update a user")
       description <<-DOC
-        Adds role 'Anonymous' to the user if it is not already present.
-        Only admin can set admin account.
+        Adds role 'Default role' to the user if it is not already present.
+        Only another admin can change the admin account attribute.
       DOC
       param :id, String, :required => true
-      param :user, Hash, :required => true do
-        param :login, String
-        param :firstname, String, :allow_nil => true
-        param :lastname, String, :allow_nil => true
-        param :mail, String
-        param :admin, :bool, :desc => "Is an admin account?"
-        param :password, String
-      end
+      param_group :user
 
       def update
-        admin = params[:user].has_key?(:admin) ? params[:user].delete(:admin) : nil
-        # Remove keys for restricted variables when the user is editing their own account
-        if @user == User.current
-          for key in params[:user].keys
-            params[:user].delete key unless %w{password_confirmation password mail firstname lastname}.include? key
-          end
-        end
         if @user.update_attributes(params[:user])
-          # Only an admin can update admin attribute of another use
-          # this is required, as the admin field is blacklisted above
-          @user.update_attribute(:admin, admin) if User.current.admin and !admin.nil?
-          @user.roles << Role.find_by_name("Anonymous") unless @user.roles.map(&:name).include? "Anonymous"
+          update_sub_hostgroups_owners
+
           process_success
         else
           process_resource_error
         end
       end
 
-      api :DELETE, "/users/:id/", "Delete an user."
+      api :DELETE, "/users/:id/", N_("Delete a user")
       param :id, String, :required => true
 
       def destroy
         if @user == User.current
-          deny_access "You are trying to delete your own account"
+          deny_access N_("You are trying to delete your own account")
         else
           process_response @user.destroy
         end
       end
 
-      protected
-      def resource_identifying_attributes
-        %w(id login)
+      private
+
+      def find_resource
+        editing_self? ? @user = User.find(User.current.id) : super
       end
 
+      def allowed_nested_id
+        %w(auth_source_ldap_id role_id location_id organization_id usergroup_id)
+      end
     end
   end
 end

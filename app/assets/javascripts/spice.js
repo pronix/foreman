@@ -9,7 +9,7 @@ $(function () {
   var password = $('#spice-area').data('password');
 
   if ((!host) || (!port)) {
-    console.log(_("must set host and port"));
+    console.log(__("must set host and port"));
     return;
   }
 
@@ -25,17 +25,17 @@ function disconnect() {
 
 function spice_error(e) {
   $('#spice-status').text(e);
-  $('#spice-status').removeClass('label-success').addClass('label-important');
+  $('#spice-status').removeClass('label-success').addClass('label-danger');
   disconnect();
 }
 
 function spice_success(m) {
-  $('#spice-status').text(Jed.sprintf(_('Connected (unencrypted) to: %s'), $('#spice-status').attr('data-host')))
+  $('#spice-status').text(Jed.sprintf(__('Connected (unencrypted) to: %s'), $('#spice-status').attr('data-host')))
   $('#spice-status').addClass('label-success');
 }
 
 function connectXPI() {
-  if ($('#spice-xpi').size() == 0) {
+  if ($('#spice-xpi').length == 0) {
     $('#spice-area').append('<embed type="application/x-spice" height=0 width=0 id="spice-xpi">');
   }
   var attrs = $('#spice-area');

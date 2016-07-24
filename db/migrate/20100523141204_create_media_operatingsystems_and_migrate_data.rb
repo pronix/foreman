@@ -1,10 +1,8 @@
 class CreateMediaOperatingsystemsAndMigrateData < ActiveRecord::Migration
-
   class Medium < ActiveRecord::Base; end
 
-  def self.up
-
-    medium_hash = Hash.new
+  def up
+    medium_hash = {}
     Medium.all.each do |medium|
       unless medium.operatingsystem_id.nil?
         if Operatingsystem.exists?(medium.operatingsystem_id)
@@ -16,7 +14,7 @@ class CreateMediaOperatingsystemsAndMigrateData < ActiveRecord::Migration
       end
     end
 
-    create_table :media_operatingsystems , :id => false do |t|
+    create_table :media_operatingsystems, :id => false do |t|
       t.references :medium, :null => false
       t.references :operatingsystem, :null => false
     end
@@ -27,7 +25,7 @@ class CreateMediaOperatingsystemsAndMigrateData < ActiveRecord::Migration
     Medium.reset_column_information
   end
 
-  def self.down
+  def down
     add_column :media, :operatingsystem_id, :integer
     drop_table :media_operatingsystems
   end

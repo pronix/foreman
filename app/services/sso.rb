@@ -1,13 +1,22 @@
 module SSO
-  METHODS = [Apache, SignoBasic, Basic, Oauth, Signo]
+  METHODS = [Apache, Basic, Oauth]
 
   def self.get_available(controller)
     all_methods = all.map { |method| method.new(controller) }
-    all_methods.select(&:available?).first
+    all_methods.find(&:available?)
   end
 
   def self.all
-    METHODS
+    METHODS + (@registered_methods || [])
   end
 
+  def self.register_method(klass)
+    @registered_methods ||= []
+    @registered_methods << klass
+    klass
+  end
+
+  def self.deregister_method(klass)
+    @registered_methods.delete(klass) if @registered_methods
+  end
 end

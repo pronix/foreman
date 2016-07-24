@@ -1,13 +1,18 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class DashboardTest < ActionDispatch::IntegrationTest
+class DashboardIntegrationTest < ActionDispatch::IntegrationTest
+  def setup
+    Dashboard::Manager.reset_user_to_default(users(:admin))
+  end
 
   def assert_dashboard_link(text)
     visit dashboard_path
     assert page.has_link?(text), "link '#{text}' was expected, but it does not exist"
-    click_link(text)
-    assert_equal hosts_path, current_path, "new path #{hosts_path} was expected but it was #{current_path}"
-    assert_not_nil find_field('search').value
+    within "li[data-name='Status table']" do
+      click_link(text)
+    end
+    assert_current_path hosts_path, :only_path => true
+    assert_match(/search=/, current_url)
   end
 
   test "dashboard page" do
@@ -32,7 +37,7 @@ class DashboardTest < ActionDispatch::IntegrationTest
   end
 
   test "dashboard link out of sync hosts" do
-    assert_dashboard_link 'Out of sync Hosts'
+    assert_dashboard_link 'Out of sync hosts'
   end
 
   test "dashboard link hosts with no reports" do
@@ -43,4 +48,12 @@ class DashboardTest < ActionDispatch::IntegrationTest
     assert_dashboard_link 'Hosts with alerts disabled'
   end
 
+  test 'widgets not in dashboard show up in list' do
+    deleted_widget = users(:admin).widgets.last
+    users(:admin).widgets.destroy(deleted_widget)
+    Capybara.reset_sessions!
+    login_admin
+    visit dashboard_path
+    assert_equal deleted_widget.name, page.find('li.widget-add a').text
+  end
 end

@@ -13,14 +13,11 @@ desc <<-END_DESC
 END_DESC
 namespace :smartproxy do
   task :migrate => :environment do
-
     proxies = Feature.find_by_name("Puppet").smart_proxies
     proxies.map! do |proxy|
       class << proxy
         attr_accessor :names
-        def include? hostname
-          names.include? hostname
-        end
+        delegate :include?, :to => :names
         # # This creates a list of names that include the proxy's fqdn plus pupppet.domain, if puppet is an alias for host
         def load_aliases
           @names = [hostname]

@@ -1,10 +1,9 @@
 module Api
   module V1
     class SmartProxiesController < V1::BaseController
-
       include Api::ImportPuppetclassesCommonController
-      before_filter :find_resource, :only => %w{show update destroy refresh}
-      before_filter :check_feature_type, :only => :index
+      before_action :find_resource, :only => %w{show update destroy refresh}
+      before_action :check_feature_type, :only => :index
 
       api :GET, "/smart_proxies/", "List all smart_proxies."
       param :type, String, :desc => "filter by type"
@@ -58,9 +57,19 @@ module Api
       end
 
       private
+
+      def action_permission
+        case params[:action]
+        when 'refresh'
+          :edit
+        else
+          super
+        end
+      end
+
       def proxies_by_type(type)
-        return SmartProxy.includes(:features).try(type.downcase+"_proxies") if not type.nil?
-        return SmartProxy.includes(:features).all
+        return SmartProxy.authorized(:view_smart_proxies).includes(:features).with_features(type) if type.present?
+        SmartProxy.authorized(:view_smart_proxies).includes(:features).all
       end
 
       def check_feature_type
@@ -68,11 +77,10 @@ module Api
 
         allowed_types = Feature.name_map.keys
 
-        if not allowed_types.include? params[:type].downcase
-          raise ArgumentError, "Invalid feature type. Select one of: #{allowed_types.join(", ")}."
+        if !allowed_types.include? params[:type].downcase
+          raise ArgumentError, "Invalid feature type. Select one of: #{allowed_types.join(', ')}."
         end
       end
-
     end
   end
 end

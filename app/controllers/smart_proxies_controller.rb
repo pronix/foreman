@@ -1,59 +1,164 @@
 class SmartProxiesController < ApplicationController
-  before_filter :find_by_id, :only => [:edit, :update, :destroy, :ping, :refresh]
+  include Foreman::Controller::AutoCompleteSearch
+
+  before_action :find_resource, :only => [:show, :edit, :update, :refresh, :ping, :tftp_server, :destroy, :puppet_environments, :puppet_dashboard, :log_pane, :failed_modules, :errors_card, :modules_card, :expire_logs]
+  before_action :find_status, :only => [:ping, :tftp_server, :puppet_environments]
+
   def index
-    @proxies = SmartProxy.includes(:features).paginate :page => params[:page]
+    @smart_proxies = resource_base.includes(:features).search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
+  end
+
+  def show
   end
 
   def new
-    @proxy = SmartProxy.new
+    @smart_proxy = SmartProxy.new
   end
 
   def create
-    @proxy = SmartProxy.new(params[:smart_proxy])
-    if @proxy.save
-      process_success :object => @proxy
+    @smart_proxy = SmartProxy.new(params[:smart_proxy])
+    if @smart_proxy.save
+      process_success :object => @smart_proxy
     else
-      process_error :object => @proxy
+      process_error :object => @smart_proxy
     end
   end
 
   def edit
-  end
-
-  def ping
-    respond_to do |format|
-      format.json {render :json => errors_hash(@proxy.refresh)}
-    end
+    @proxy = @smart_proxy
   end
 
   def refresh
-    old_features = @proxy.features
-    if @proxy.refresh.blank? && @proxy.save
-      msg = @proxy.features == old_features ? _("No changes found when refreshing features from %s.") : _("Successfully refreshed features from %s.")
-      process_success :object => @proxy, :success_msg => msg % @proxy.name
+    old_features = @smart_proxy.features.to_a
+    if @smart_proxy.refresh.blank? && @smart_proxy.save
+      msg = @smart_proxy.features.to_a == old_features ? _("No changes found when refreshing features from %s.") : _("Successfully refreshed features from %s.")
+      process_success :object => @smart_proxy, :success_msg => msg % @smart_proxy.name
     else
-      process_error :object => @proxy
+      process_error :object => @smart_proxy
     end
   end
 
-  def update
-    if @proxy.update_attributes(params[:smart_proxy])
-      process_success :object => @proxy
+  def ping
+    requested_data do
+      @proxy_status[:version].version
+    end
+  end
+
+  def tftp_server
+    if @proxy_status[:tftp]
+      requested_data do
+        @proxy_status[:tftp].server
+      end
     else
-      process_error :object => @proxy
+      render(:json => {:success => false, :message => _('No TFTP feature')})
+    end
+  end
+
+  def puppet_environments
+    render :partial => 'smart_proxies/plugins/puppet_envs', :locals => {:envs => @proxy_status[:puppet].environment_stats}
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def puppet_dashboard
+    dashboard = Dashboard::Data.new("puppetmaster = \"#{@smart_proxy.name}\"")
+    @hosts = dashboard.hosts
+    @report = dashboard.report
+    @latest_events = dashboard.latest_events
+    render :partial => 'smart_proxies/plugins/puppet_dashboard', :locals => { :dashboard => dashboard }
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def update
+    if @smart_proxy.update_attributes(params[:smart_proxy])
+      process_success :object => @smart_proxy
+    else
+      process_error :object => @smart_proxy
     end
   end
 
   def destroy
-    if @proxy.destroy
-      process_success :object => @proxy
+    if @smart_proxy.destroy
+      process_success :object => @smart_proxy, :success_redirect => smart_proxies_path
     else
-      process_error :object => @proxy
+      process_error :object => @smart_proxy
     end
   end
 
+  def log_pane
+    render :partial => 'smart_proxies/logs/list', :locals => {:log_entries => @smart_proxy.statuses[:logs].logs.log_entries}
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def expire_logs
+    from = (params[:from].to_i rescue 0) || 0
+    if from >= 0
+      logger.debug "Expired smart-proxy logs, new timestamp is #{from}"
+      @smart_proxy.expired_logs = from.to_s
+      @smart_proxy.save!
+    end
+    @smart_proxy.statuses[:logs].revoke_cache!
+    log_pane
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def failed_modules
+    modules = @smart_proxy.statuses[:logs].logs.failed_modules || {}
+    render :partial => 'smart_proxies/logs/failed_modules', :locals => {:modules => modules}
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def errors_card
+    logs = @smart_proxy.statuses[:logs].logs
+    render :partial => 'smart_proxies/logs/errors_card', :locals => {:logs => logs}
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def modules_card
+    logs = @smart_proxy.statuses[:logs].logs
+    render :partial => 'smart_proxies/logs/modules_card', :locals => {
+      :logs => logs,
+      :features => @smart_proxy.features,
+      :features_started => @smart_proxy.features.count,
+      :names => logs.failed_module_names
+    }
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
   private
-  def find_by_id
-    @proxy = SmartProxy.find(params[:id])
+
+  def find_status
+    @proxy_status = @smart_proxy.statuses
+  end
+
+  def requested_data
+    data = yield
+    render :json => {:success => true, :message => data }
+  rescue Foreman::Exception => exception
+    render :json => {:success => false, :message => exception.message} and return
+  end
+
+  def action_permission
+    case params[:action]
+      when 'refresh', 'expire_logs'
+        :edit
+      when 'ping', 'tftp_server', 'puppet_environments', 'puppet_dashboard', 'log_pane', 'failed_modules', 'errors_card', 'modules_card'
+        :view
+      else
+        super
+    end
+  end
+
+  def resource_base
+    base = super
+    base = base.eager_load(:locations) if SETTINGS[:locations_enabled]
+    base = base.eager_load(:organizations) if SETTINGS[:organizations_enabled]
+    base
   end
 end

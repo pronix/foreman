@@ -1,4 +1,5 @@
 object @operatingsystem
 
 extends "api/v2/operatingsystems/base"
-attributes :major, :minor, :family, :release_name, :created_at, :updated_at
+
+attributes :description, :major, :minor, :family, :release_name, :password_hash, :created_at, :updated_at

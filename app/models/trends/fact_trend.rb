@@ -1,5 +1,4 @@
 class FactTrend < Trend
-
   validates :trendable_id, :presence => true, :uniqueness => {:scope =>  [:trendable_type, :fact_value] }, :allow_blank => false
 
   before_save :update_fact_name
@@ -45,7 +44,7 @@ class FactTrend < Trend
   end
 
   def find_hosts
-    Host.joins(:fact_values).where(:fact_values => {:value => fact_value}).find(:all, :order => 'name')
+    Host.joins(:fact_values).where(:fact_values => {:value => fact_value}).order(:name)
   end
 
   private
@@ -53,5 +52,4 @@ class FactTrend < Trend
   def update_fact_name
     self.fact_name = FactName.find(trendable_id).name if trendable_id
   end
-
 end

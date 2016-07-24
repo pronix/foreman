@@ -1,9 +1,14 @@
 class SmartProxy < ActiveRecord::Base
-  include Authorization
+  include Authorizable
+  extend FriendlyId
+  friendly_id :name
   include Taxonomix
+  include Parameterizable::ByIdName
+  audited :allow_mass_assignment => true
 
   attr_accessible :name, :url, :location_ids, :organization_ids
-  EnsureNotUsedBy.new(:hosts, :hostgroups, :subnets, :domains, :puppet_ca_hosts, :puppet_ca_hostgroups)
+  validates_lengths_from_database
+  before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups, :subnets, :domains, [:puppet_ca_hosts, :hosts], [:puppet_ca_hostgroups, :hostgroups], :realms)
   #TODO check if there is a way to look into the tftp_id too
   # maybe with a predefined sql
   has_and_belongs_to_many :features
@@ -13,13 +18,17 @@ class SmartProxy < ActiveRecord::Base
   has_many :hostgroups,                                       :foreign_key => 'puppet_proxy_id'
   has_many :puppet_ca_hosts, :class_name => 'Host::Managed',  :foreign_key => 'puppet_ca_proxy_id'
   has_many :puppet_ca_hostgroups, :class_name => 'Hostgroup', :foreign_key => 'puppet_ca_proxy_id'
-  URL_HOSTNAME_MATCH = %r{^(?:http|https):\/\/([^:\/]+)}
+  has_many :realms,                                           :foreign_key => 'realm_proxy_id'
   validates :name, :uniqueness => true, :presence => true
-  validates :url, :presence => true, :format => { :with => URL_HOSTNAME_MATCH, :message => N_('is invalid - only  http://, https:// are allowed') },
-            :uniqueness     => { :message => N_('Only one declaration of a proxy is allowed') }
+  validates :url, :presence => true, :url_schema => ['http', 'https'],
+    :uniqueness => { :message => N_('Only one declaration of a proxy is allowed') }
 
   # There should be no problem with associating features before the proxy is saved as the whole operation is in a transaction
   before_save :sanitize_url, :associate_features
+
+  scoped_search :on => :name, :complete_value => :true
+  scoped_search :on => :url, :complete_value => :true
+  scoped_search :in => :features, :on => :name, :rename => :feature, :complete_value => :true
 
   # with proc support, default_scope can no longer be chained
   # include all default scoping here
@@ -29,37 +38,24 @@ class SmartProxy < ActiveRecord::Base
     end
   }
 
-  scope :my_proxies, lambda {
-    user       = User.current
-    conditions = user.admin? || user.allowed_to?({ :controller => :smart_proxy, :action => :index }) ? {} : '1 = 0'
-    where(conditions)
-  }
-
-  Feature.name_map.each { |f, v| scope "#{f}_proxies".to_sym, where(:features => { :name => v }).joins(:features) }
+  scope :with_features, ->(*feature_names) { where(:features => { :name => feature_names }).joins(:features) if feature_names.any? }
 
   def hostname
-    # This will always match as it is validated
-    url.match(URL_HOSTNAME_MATCH)[1]
+    URI(url).host
   end
 
   def to_s
-    if Setting[:legacy_puppet_hostname]
-      hostname =~ /^puppet\./ ? 'puppet' : hostname
-    else
-      hostname
-    end
-  end
-
-  def to_param
-    "#{id}-#{name.parameterize}"
+    return hostname unless Setting[:legacy_puppet_hostname]
+    hostname.match(/^puppet\./) ? 'puppet' : hostname
   end
 
   def self.smart_proxy_ids_for(hosts)
     ids = []
-    ids << hosts.joins(:subnet).pluck('DISTINCT subnets.dhcp_id')
-    ids << hosts.joins(:subnet).pluck('DISTINCT subnets.tftp_id')
-    ids << hosts.joins(:subnet).pluck('DISTINCT subnets.dns_id')
-    ids << hosts.joins(:domain).pluck('DISTINCT domains.dns_id')
+    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.dhcp_id')
+    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.tftp_id')
+    ids << hosts.joins(:primary_interface => :subnet).pluck('DISTINCT subnets.dns_id')
+    ids << hosts.joins(:primary_interface => :domain).pluck('DISTINCT domains.dns_id')
+    ids << hosts.joins(:realm).pluck('DISTINCT realm_proxy_id')
     ids << hosts.pluck('DISTINCT puppet_proxy_id')
     ids << hosts.pluck('DISTINCT puppet_ca_proxy_id')
     ids << hosts.joins(:hostgroup).pluck('DISTINCT hostgroups.puppet_proxy_id')
@@ -68,9 +64,45 @@ class SmartProxy < ActiveRecord::Base
     ids.flatten.compact.map { |i| i.to_i }.uniq
   end
 
+  def hosts_count
+    Host::Managed.search_for("smart_proxy = #{name}").count
+  end
+
   def refresh
+    statuses.values.each { |status| status.revoke_cache! }
     associate_features
     errors
+  end
+
+  def taxonomy_foreign_conditions
+    conditions = {}
+    if has_feature?('Puppet') && has_feature?('Puppet CA')
+      conditions = "puppet_proxy_id = #{id} OR puppet_ca_proxy_id = #{id}"
+    elsif has_feature?('Puppet')
+      conditions[:puppet_proxy_id] = id
+    elsif has_feature?('Puppet CA')
+      conditions[:puppet_ca_proxy_id] = id
+    end
+    conditions
+  end
+
+  def has_feature?(feature)
+    self.features.any? { |proxy_feature| proxy_feature.name == feature }
+  end
+
+  def statuses
+    return @statuses if @statuses
+
+    @statuses = {}
+    features.each do |feature|
+      name = feature.name.delete(' ')
+      if (status = ProxyStatus.find_status_by_humanized_name(name))
+        @statuses[name.downcase.to_sym] = status.new(self)
+      end
+    end
+    @statuses[:version] = ProxyStatus::Version.new(self)
+
+    @statuses
   end
 
   private
@@ -84,7 +116,7 @@ class SmartProxy < ActiveRecord::Base
 
     begin
       reply = ProxyAPI::Features.new(:url => url).features
-      if reply.is_a?(Array) and reply.any?
+      if reply.is_a?(Array) && reply.any?
         self.features = Feature.where(:name => reply.map{|f| Feature.name_map[f]})
       else
         self.features.clear

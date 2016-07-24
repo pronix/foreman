@@ -1,7 +1,7 @@
 class CreateTokens < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :tokens do |t|
-      t.string :value
+      t.string :value, :limit => 255
       t.datetime :expires
       t.integer :host_id
     end
@@ -9,7 +9,7 @@ class CreateTokens < ActiveRecord::Migration
     add_index :tokens, :host_id
   end
 
-  def self.down
+  def down
     drop_table :tokens
   end
 end

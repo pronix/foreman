@@ -21,10 +21,6 @@ module HostTemplateHelpers
     operatingsystem.initrd(architecture)
   end
 
-  def media_path
-    operatingsystem.medium_uri(self)
-  end
-
   #returns the URL for Foreman based on the required action
   def foreman_url(action = "provision")
     # Get basic stuff
@@ -32,10 +28,35 @@ module HostTemplateHelpers
     protocol = config.scheme || 'http'
     port     = config.port || request.port
     host     = config.host || request.host
+    path     = config.path
 
-    url_for :only_path => false, :controller => "/unattended", :action => action,
-      :protocol  => protocol, :host => host, :port => port,
-      :token     => (@host.token.value unless @host.token.nil?)
+    @host ||= self
+    proxy = @host.try(:subnet).try(:tftp)
+
+    # use template_url from the request if set, but otherwise look for a Template
+    # feature proxy, as PXE templates are written without an incoming request.
+    url = if @template_url && @host.try(:token).present?
+            @template_url
+          elsif proxy.present? && proxy.has_feature?('Templates') && @host.try(:token).present?
+            temp_url = ProxyAPI::Template.new(:url => proxy.url).template_url
+            if temp_url.nil?
+              logger.warn("unable to obtain template url set by proxy #{proxy.url}. falling back on proxy url.")
+              temp_url = proxy.url
+            end
+            temp_url
+          end
+
+    if url.present?
+      uri      = URI.parse(url)
+      host     = uri.host
+      port     = uri.port
+      protocol = uri.scheme
+      path     = config.path
+    end
+
+    url_for :only_path => false, :controller => "/unattended", :action => 'host_template',
+      :protocol  => protocol, :host => host, :port => port, :script_name => path,
+      :token     => (@host.token.value unless @host.token.nil?), :kind => action
   end
 
   attr_writer(:url_options)
@@ -47,5 +68,4 @@ module HostTemplateHelpers
     url_options[:host] = Setting[:foreman_url] if Setting[:foreman_url]
     url_options
   end
-
 end

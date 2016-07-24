@@ -16,7 +16,6 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 module Menu
   module Manager
-
     class << self
       def map(menu_name)
         @items ||= {}
@@ -57,10 +56,10 @@ module Menu
       #   eg. :children => Proc.new {|project| [Foreman::Manager::MenuItem.new(...)] }
       # * last: menu item will stay at the end (eg. :last => true)
       # * html_options: a hash of html options that are passed to link_to
-      def push(obj, options={})
+      def push(obj, options = {})
         parent = options[:parent] || @parent
 
-        target_root = (parent && subtree = self.find(parent)) ? subtree : @menu_items.root
+        target_root = (parent && (subtree = self.find(parent))) ? subtree : @menu_items.root
 
         # menu item position
         if options[:first]
@@ -76,11 +75,11 @@ module Menu
         end
       end
 
-      def item(name, options={})
+      def item(name, options = {})
         push(Item.new(name, options), options)
       end
 
-      def sub_menu name, options={}, &block
+      def sub_menu(name, options = {}, &block)
         push(Toggle.new(name, options[:caption]), options)
         current = @parent
         @parent = name
@@ -88,15 +87,18 @@ module Menu
         @parent = current
       end
 
-      def divider options={}
+      def divider(options = {})
         push(Divider.new(:divider, options), options)
       end
 
       # Removes a menu item
       def delete(name)
-        if found = self.find(name)
-          @menu_items.remove!(found)
+        @menu_items.each do |item|
+          if item.name == name && !item.parent.nil?
+            return item.parent.remove!(item)
+          end
         end
+        nil
       end
 
       # Checks if a menu item exists
@@ -109,11 +111,7 @@ module Menu
       end
 
       def position_of(name)
-        @menu_items.each do |node|
-          if node.name == name
-            return node.position
-          end
-        end
+        @menu_items.each { |node| return node.position if node.name == name }
       end
     end
   end

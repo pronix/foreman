@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V1::ModelsControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => "new model" }
 
   test "should get index" do
@@ -28,16 +27,19 @@ class Api::V1::ModelsControllerTest < ActionController::TestCase
 
   test "should update model" do
     name = Model.first.name
-    put :update, { :id => Model.first.to_param, :name => "#{name}".to_param }
+    put :update, { :id => Model.first.to_param, :name => name.to_s.to_param }
     assert_response :success
   end
 
   test "should destroy model" do
-    id = Model.first.id
     assert_difference('Model.count', -1) do
       delete :destroy, { :id => models(:one).to_param }
     end
     assert_response :success
   end
 
+  test "invalid searches are handled gracefully" do
+    get :index, { :search => 'notarightterm = wrong' }
+    assert_response :bad_request
+  end
 end

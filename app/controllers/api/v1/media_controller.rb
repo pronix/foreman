@@ -1,7 +1,7 @@
 module Api
   module V1
     class MediaController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       # TRANSLATORS: API documentation - do not translate
       PATH_INFO = <<-eos
@@ -20,17 +20,19 @@ The family that the operating system belongs to.
 
 Available families:
 
-#{Operatingsystem.families.map { |f| "* " + f }.join("\n")}
+#{Operatingsystem.families.map { |f| '* ' + f }.join("\n")}
       eos
 
       api :GET, "/media/", "List all media."
       param :search, String, :desc => "filter results", :required => false
-      param :order, String, :desc => "sort results", :required => false, :desc => "for example, name ASC, or name DESC"
+      param :order, String, :desc => "sort results", :required => false
       param :page, String, :desc => "paginate results"
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @media = Medium.search_for(*search_options).paginate(paginate_options)
+        @media = Medium.
+          authorized(:view_media).
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/media/:id/", "Show a medium."
@@ -71,7 +73,6 @@ Available families:
       def destroy
         process_response @medium.destroy
       end
-
     end
   end
 end

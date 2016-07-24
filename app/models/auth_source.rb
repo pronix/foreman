@@ -16,11 +16,23 @@
 # Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 
 class AuthSource < ActiveRecord::Base
-  include Authorization
+  include Authorizable
+
+  attr_accessible :name, :onthefly_register
+
+  audited :allow_mass_assignment => true
+
+  validates_lengths_from_database :except => [:name, :account_password, :host, :attr_login, :attr_firstname, :attr_lastname, :attr_mail]
   before_destroy EnsureNotUsedBy.new(:users)
   has_many :users
+  has_many :external_usergroups, :dependent => :destroy
 
   validates :name, :presence => true, :uniqueness => true, :length => { :maximum => 60 }
+
+  scope :non_internal, -> { where("type NOT IN (?)", ['AuthSourceInternal', 'AuthSourceHidden']) }
+  scope :except_hidden, -> { where('type <> ?', 'AuthSourceHidden') }
+
+  scoped_search :on => :name, :complete_value => :true
 
   def authenticate(login, password)
   end
@@ -48,18 +60,22 @@ class AuthSource < ActiveRecord::Base
     false
   end
 
+  # Called after creating a new user at login
+  def update_usergroups(login)
+  end
+
   # Try to authenticate a user not yet registered against available sources
   # Returns : user's attributes OR nil
   def self.authenticate(login, password)
     AuthSource.where(:onthefly_register => true).each do |source|
-      logger.debug "Authenticating '#{login}' against '#{source.name}'"
+      logger.debug "Authenticating '#{login}' against '#{source}'"
       begin
         if (attrs = source.authenticate(login, password))
           logger.debug "Authentication successful for '#{login}'"
           attrs[:auth_source_id] = source.id
         end
       rescue => e
-        logger.error "Error during authentication: #{e.message}"
+        Foreman::Logging.exception("Error during authentication against '#{source}'", e)
         attrs = nil
       end
       return attrs if attrs

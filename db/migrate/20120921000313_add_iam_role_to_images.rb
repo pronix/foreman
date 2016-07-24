@@ -1,9 +1,9 @@
 class AddIamRoleToImages < ActiveRecord::Migration
-  def self.up
-    add_column :images, :iam_role, :string
+  def up
+    add_column :images, :iam_role, :string, :limit => 255
   end
 
-  def self.down
+  def down
     remove_column :images, :iam_role
   end
 end

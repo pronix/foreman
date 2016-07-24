@@ -1,8 +1,7 @@
 class AddBmcFeatureToProxy < ActiveRecord::Migration
-  def self.up
-    Feature.find_or_create_by_name("BMC")
+  def up
   end
 
-  def self.down
+  def down
   end
 end

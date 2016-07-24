@@ -1,4 +1,7 @@
 module TaxonomyHelper
+  include AncestryHelper
+  include FormHelper
+
   def show_location_tab?
     SETTINGS[:locations_enabled] && User.current.allowed_to?(:view_locations)
   end
@@ -11,8 +14,8 @@ module TaxonomyHelper
     SETTINGS[:locations_enabled] or SETTINGS[:organizations_enabled]
   end
 
-  def organization_dropdown count
-    text = Organization.current.nil? ? _("Any Organization") : Organization.current.to_label
+  def organization_dropdown(count)
+    text = Organization.current.nil? ? _("Any Organization") : truncate(Organization.current.to_label)
     if count == 1 && !User.current.admin?
       link_to text, "#"
     else
@@ -20,13 +23,13 @@ module TaxonomyHelper
     end
   end
 
-  def location_dropdown count
-      text = Location.current.nil? ? _("Any Location") : Location.current.to_label
-      if count == 1 && !User.current.admin?
-        link_to text, "#"
-      else
-        link_to(text, "#", :class => "dropdown-toggle", :'data-toggle'=>"dropdown")
-      end
+  def location_dropdown(count)
+    text = Location.current.nil? ? _("Any Location") : truncate(Location.current.to_label)
+    if count == 1 && !User.current.admin?
+      link_to text, "#"
+    else
+      link_to(text, "#", :class => "dropdown-toggle", :'data-toggle'=>"dropdown")
+    end
   end
 
   def taxonomy_single
@@ -41,12 +44,16 @@ module TaxonomyHelper
     _(controller_name.humanize.titleize)
   end
 
+  def taxonomy_new
+    is_location? ? _("New Location") : _("New Organization")
+  end
+
   def wizard_header(current, *args)
     content_tag(:ul,:class=>"wizard") do
       step=1
       content = nil
       args.each do |arg|
-        step_content = content_tag(:li,(content_tag(:span,step,:class=>"badge" +" #{'badge-inverse' if step==current}")+arg).html_safe, :class=>"#{'active' if step==current}")
+        step_content = content_tag(:li,(content_tag(:span,step,:class=>"badge" +" #{'badge-inverse' if step==current}")+arg).html_safe, :class=>('active' if step==current).to_s)
         step == 1 ? content = step_content : content += step_content
         step += 1
       end
@@ -54,7 +61,7 @@ module TaxonomyHelper
     end
   end
 
-  def option_button text, href, options
+  def option_button(text, href, options)
     field(nil, "", options) do
       link_to(text, href, options)
     end
@@ -76,6 +83,10 @@ module TaxonomyHelper
     is_location? ? hash_for_clone_location_path(:id => taxonomy) : hash_for_clone_organization_path(:id => taxonomy)
   end
 
+  def hash_for_nest_taxonomy_path(taxonomy)
+    is_location? ? hash_for_nest_location_path(taxonomy) : hash_for_nest_organization_path(taxonomy)
+  end
+
   def hash_for_taxonomy_path(taxonomy)
     is_location? ? hash_for_location_path(:id => taxonomy) : hash_for_organization_path(:id => taxonomy)
   end
@@ -88,8 +99,16 @@ module TaxonomyHelper
     is_location? ? mismatches_locations_path : mismatches_organizations_path
   end
 
-  def import_mismatches_taxonomy_path taxonomy
+  def import_mismatches_taxonomy_path(taxonomy)
     is_location? ? import_mismatches_location_path(taxonomy) : import_mismatches_organization_path(taxonomy)
+  end
+
+  def hash_for_mismatches_taxonomies_path
+    is_location? ? hash_for_mismatches_locations_path : hash_for_mismatches_organizations_path
+  end
+
+  def hash_for_import_mismatches_taxnomies_path
+    is_location? ? hash_for_import_mismatches_locations_path : hash_for_import_mismatches_organizations_path
   end
 
   def assign_all_hosts_taxonomy_path(taxonomy)
@@ -113,9 +132,57 @@ module TaxonomyHelper
   end
 
   def taxonomy_selects(f, selected_ids, taxonomy, label, options = {}, options_html = {})
-    options[:disabled] = Array.wrap(options[:disabled]) + Array.wrap(taxonomy.current.try(:id))
+    options[:disabled] = Array.wrap(options[:disabled])
     options[:label]    ||= _(label)
-    multiple_selects f, label.downcase, taxonomy, selected_ids, options, options_html
+    multiple_selects f, label.downcase, taxonomy.authorized("assign_#{label.downcase}", taxonomy), selected_ids, options, options_html
   end
 
+  def all_checkbox(f, resource)
+    return ''.html_safe unless User.current.admin? || User.current.filters.joins(:permissions).where({:'permissions.name' => "view_#{resource}",
+                                                       :search => nil,
+                                                       :taxonomy_search => nil}).present?
+    checkbox_f(f, :ignore_types,
+                 {:label => translated_label(resource, :all),
+                  :multiple => true,
+                  :onchange => 'ignore_checked(this)'},
+                  resource.to_s.classify)
+  end
+
+  def show_resource_if_allowed(f, taxonomy, resource_options)
+    if resource_options.is_a? Hash
+      resource = resource_options[:resource]
+      association = resource_options[:association]
+    else
+      resource = resource_options
+      association = resource.to_s.classify.constantize
+    end
+    return unless User.current.allowed_to?("view_#{resource}".to_sym)
+    ids = "#{association.where(nil).klass.to_s.underscore.singularize}_ids".to_sym
+
+    content_tag(:div, :id => resource, :class => "tab-pane") do
+      all_checkbox(f, resource) +
+      multiple_selects(f, association.where(nil).klass.to_s.underscore.pluralize.to_sym, association, taxonomy.selected_or_inherited_ids[ids],
+                           {:disabled => taxonomy.used_and_selected_or_inherited_ids[ids],
+                            :label => translated_label(resource, :select)},
+                           {'data-mismatches' => taxonomy.need_to_be_selected_ids[ids].to_json,
+                            'data-inheriteds' => taxonomy.inherited_ids[ids].to_json,
+                            'data-useds' => taxonomy.used_ids[ids].to_json })
+    end
+  end
+
+  def translated_label(resource, verb)
+    labels = { :users => { :all => _("All users"), :select => _("Select users") },
+               :smart_proxies => { :all => _("All smart proxies"), :select => _("Select smart proxies") },
+               :subnets => { :all => _("All subnets"), :select => _("Select subnets") },
+               :compute_resources => { :all => _("All compute resources"), :select => _("Select compute resources") },
+               :media => { :all => _("All media"), :select => _("Select media") },
+               :provisioning_templates => { :all => _("All provisioning templates"), :select => _("Select provisioning templates") },
+               :ptables => { :all => _("All partition tables"), :select => _("Select partition tables") },
+               :domains => { :all => _("All domains"), :select => _("Select domains") },
+               :realms => { :all => _("All realms"), :select => _("Select realms") },
+               :environments => { :all => _("All environments"), :select => _("Select environments") },
+               :hostgroups => { :all => _("All host groups"), :select => _("Select host groups") }
+    }
+    labels[resource][verb]
+  end
 end

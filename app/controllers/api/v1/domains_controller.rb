@@ -13,7 +13,7 @@ module Api
         DOC
       end
 
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/domains/", "List of domains"
       param :search, String, :desc => "Filter results"
@@ -22,7 +22,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @domains = Domain.search_for(*search_options).paginate(paginate_options)
+        @domains = Domain.
+          authorized(:view_domains).
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/domains/:id/", "Show a domain."

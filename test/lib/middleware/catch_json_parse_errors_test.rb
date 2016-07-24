@@ -1,14 +1,13 @@
-require 'test_helper'
+require 'integration_test_helper'
 require 'rest-client'
 require 'capybara/rails'
 
 class CatchJsonParseErrorsTest < ActiveSupport::TestCase
   def setup
-    Capybara.current_driver = :selenium
+    Capybara.current_driver = Capybara.javascript_driver
   end
 
   test "submitting invalid JSON" do
-
     broken_json = "{notAJson"
     body = post_broken_json_to_api('/api/hosts', broken_json)
 
@@ -39,5 +38,4 @@ class CatchJsonParseErrorsTest < ActiveSupport::TestCase
       'Content-Type' => 'application/json'
     }
   end
-
 end

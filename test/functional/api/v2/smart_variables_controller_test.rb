@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::SmartVariablesControllerTest < ActionController::TestCase
-
   test "should get all smart variables" do
     get :index
     assert_response :success
@@ -12,7 +11,10 @@ class Api::V2::SmartVariablesControllerTest < ActionController::TestCase
   end
 
   test "should get smart variables for a specific host" do
-    get :index, {:host_id => hosts(:one).to_param}
+    @host = FactoryGirl.create(:host,
+                               :puppetclasses => [puppetclasses(:one)],
+                               :environment => environments(:production))
+    get :index, {:host_id => @host.to_param}
     assert_response :success
     assert_not_nil assigns(:smart_variables)
     results = ActiveSupport::JSON.decode(@response.body)
@@ -48,7 +50,7 @@ class Api::V2::SmartVariablesControllerTest < ActionController::TestCase
         post :create, { :smart_variable => valid_attrs }
       end
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should show specific smart variable" do
@@ -72,5 +74,4 @@ class Api::V2::SmartVariablesControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

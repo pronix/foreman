@@ -23,10 +23,12 @@ module Foreman::Controller::HostDetails
       format.json do
         taxonomy_scope
         Taxonomy.as_taxonomy @organization, @location do
-          if (domain = Domain.find(params[:domain_id]))
-            render :json => domain.subnets
+          if (domain = Domain.find_by_id(params[:domain_id]))
+            render :json => domain.subnets.as_json(:include => :unused_ip)
+          elsif params[:interface]
+            render :json => Subnet.authorized(:view_subnets).as_json(:include => :unused_ip)
           else
-            not_found
+            render :json => {}
           end
         end
       end
@@ -39,15 +41,13 @@ module Foreman::Controller::HostDetails
   end
 
   private
-  def assign_parameter name, root = ""
+
+  def assign_parameter(name, root = "")
     taxonomy_scope
     Taxonomy.as_taxonomy @organization, @location do
-      if params["#{name}_id"].to_i > 0 and instance_variable_set("@#{name}",name.classify.constantize.find(params["#{name}_id"]))
-        item = instance_variable_get("@#{controller_name.singularize}") || controller_name.classify.constantize.new(params[controller_name.singularize])
-        render :partial => root + name, :locals => { :item => item }
-      else
-        head(:not_found)
-      end
+      instance_variable_set("@#{name}",name.classify.constantize.where(:id => params["#{name}_id"]).first)
+      item = instance_variable_get("@#{controller_name.singularize}") || controller_name.classify.constantize.new(params[controller_name.singularize])
+      render :partial => root + name, :locals => { :item => item }
     end
   end
 
@@ -61,5 +61,4 @@ module Foreman::Controller::HostDetails
     name = item_name
     instance_variable_set("@#{name}", name.classify.constantize.new(params[name.to_sym]))
   end
-
 end

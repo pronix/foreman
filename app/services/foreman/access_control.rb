@@ -17,7 +17,6 @@
 
 module Foreman
   module AccessControl
-
     class << self
       def map
         mapper = Mapper.new
@@ -28,6 +27,21 @@ module Foreman
 
       def permissions
         @permissions
+      end
+
+      def permissions_for_controller_action(controller_action)
+        controller_action = path_hash_to_string(controller_action) if controller_action.is_a?(Hash)
+        @permissions.select { |p| p.actions.include?(controller_action) }
+      end
+
+      def normalize_path_hash(hash)
+        hash[:controller] = hash[:controller].to_s.gsub(/::/, "_").underscore
+        hash[:controller] = hash[:controller][1..-1] if hash[:controller].starts_with?('/')
+        hash
+      end
+
+      def path_hash_to_string(hash)
+        "#{hash[:controller]}/#{hash[:action]}"
       end
 
       # Returns the permission of given name or nil if it wasn't found
@@ -68,13 +82,13 @@ module Foreman
         @security_block = nil
       end
 
-      def permission(name, hash, options={})
+      def permission(name, hash, options = {})
         @permissions ||= []
         options.merge!(:security_block => @security_block) if @security_block
         @permissions << Permission.new(name, hash, options)
       end
 
-      def security_block(name, options={})
+      def security_block(name, options = {})
         @security_block = name
         yield self
         @security_block = nil
@@ -86,7 +100,7 @@ module Foreman
     end
 
     class Permission
-      attr_reader :name, :actions, :security_block
+      attr_reader :name, :actions, :security_block, :resource_type, :engine
 
       def initialize(name, hash, options)
         @name = name
@@ -94,6 +108,8 @@ module Foreman
         @public = options[:public] || false
         @require = options[:require]
         @security_block = options[:security_block]
+        @resource_type = options[:resource_type]
+        @engine = options[:engine]
         hash.each do |controller, actions|
           if actions.is_a? Array
             @actions << actions.collect {|action| "#{controller}/#{action}"}
@@ -106,6 +122,10 @@ module Foreman
 
       def public?
         @public
+      end
+
+      def plugin?
+        !!@engine
       end
 
       def require_member?

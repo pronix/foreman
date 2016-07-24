@@ -9,9 +9,10 @@
 DOMAIN = foreman
 POTFILE = $(DOMAIN).pot
 MOFILE = $(DOMAIN).mo
-POFILES = $(shell find . -name '*.po')
+POFILES = $(shell find . -name '$(DOMAIN).po')
 MOFILES = $(patsubst %.po,%.mo,$(POFILES))
 POXFILES = $(patsubst %.po,%.pox,$(POFILES))
+EDITFILES = $(patsubst %.po,%.edit.po,$(POFILES))
 
 %.mo: %.po
 	mkdir -p $(shell dirname $@)/LC_MESSAGES
@@ -29,13 +30,6 @@ all-mo: $(MOFILES)
 	! grep -q msgid $@
 
 check: $(POXFILES)
-	msgfmt -c ${POTFILE}
-
-# Merge PO files
-update-po:
-	for f in $(shell find ./ -name "*.po") ; do \
-		msgmerge -N --backup=none -U $$f ${POTFILE} ; \
-	done
 
 # Unify duplicate translations
 uniq-po:
@@ -43,20 +37,19 @@ uniq-po:
 		msguniq $$f -o $$f ; \
 	done
 
-tx-pull:
-	tx pull -f -r foreman.foreman
-	-git commit -a -m "i18n - extracting new, updating rails, pulling from tx"
+tx-pull: $(EDITFILES)
+	tx pull -f
 
-update-rails:
-	../script/update-rails-locales.sh
-
+# Extract strings and update the .pot, prepare .edit.po files
 extract-strings:
-	bundle exec rake locale:find
+	bundle exec rake locale:find DOMAIN=$(DOMAIN) SKIP_MODEL=1
 
-tx-update: update-rails tx-pull extract-strings
-	# merging po files is unnecessary when using transifex.com (amend that)
-	git checkout -- ../locale/*/*po
-	git commit -a --amend -m "i18n - extracting new, updating rails, pulling from tx"
+# Merge .edit.po into .po
+update-po:
+	bundle exec rake locale:find locale:po_to_json DOMAIN=$(DOMAIN) SKIP_MODEL=1
+
+tx-update: extract-strings tx-pull update-po
+	git commit -m "i18n - extracting new, pulling from tx" . ../app/assets/javascripts/locale
 	-echo Changes commited!
 
 # Remove all MO files

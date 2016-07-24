@@ -9,7 +9,7 @@ module FogExtensions
       !!identity
     end
 
-    def to_json(options={ })
+    def to_json(options = { })
       ActiveSupport::JSON.encode(self, options)
     end
 
@@ -17,6 +17,13 @@ module FogExtensions
       attr = attributes.dup
       attr.delete(:client)
       attr
+    end
+
+    def ip_addresses
+      # Returning an empty array here will skips provider-specific
+      # IP address iteration and falls back on `provided_attributes[:ip]`
+      # from Fog itself
+      []
     end
   end
 end

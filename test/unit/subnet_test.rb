@@ -1,182 +1,77 @@
 require 'test_helper'
 
 class SubnetTest < ActiveSupport::TestCase
-  def setup
-    User.current = User.find_by_login "admin"
-    @subnet = Subnet.new
-    @attrs = {  :network= => "123.123.123.1",
-      :mask= => "255.255.255.0",
-      :domains= => [domains(:mydomain)],
-      :name= => "valid" }
+  should validate_presence_of(:network)
+  should validate_presence_of(:mask)
+  should_not validate_uniqueness_of(:network)
+  should_not allow_value("asf:fwe6::we6s:q1").for(:network)
+  should_not allow_value("asf:fwe6::we6s:q1").for(:mask)
+
+  test 'should be cast to Subnet::Ipv4 if no type is set' do
+    subnet = Subnet.new
+    assert_equal Subnet::Ipv4, subnet.class
   end
 
-  test "should have a network" do
-    create_a_domain_with_the_subnet
-    @subnet.network = nil
-    assert !@subnet.save
-
-    set_attr(:network=)
-    assert @subnet.save
+  test 'should be cast to Subnet::Ipv4 if type is set' do
+    subnet = Subnet.new(:type => 'Subnet::Ipv4')
+    assert_equal Subnet::Ipv4, subnet.class
   end
 
-  test "should have a mask" do
-    create_a_domain_with_the_subnet
-    @subnet.mask = nil
-    assert !@subnet.save
-
-    @subnet.mask = "255.255.255.0"
-    assert @subnet.save
+  test 'should be cast to Subnet::Ipv6 if type is set accordingly' do
+    subnet = Subnet.new(:type => 'Subnet::Ipv6')
+    assert_equal Subnet::Ipv6, subnet.class
   end
 
-  test "network should have ip format" do
-    @subnet.network = "asf.fwe6.we6s.q1"
-    set_attr(:mask=)
-    assert !@subnet.save
+  test 'child class should not be cast to default sti class even if no type is set' do
+    class Subnet::Test < Subnet; end
+    subnet = Subnet::Test.new
+    assert_equal Subnet::Test, subnet.class
   end
 
-  test "mask should have ip format" do
-    @subnet.mask = "asf.fwe6.we6s.q1"
-    set_attr(:network=, :domains=, :name=)
-    assert !@subnet.save
+  test '#network_type returns the subnets type in human friendly form' do
+    subnet = Subnet.new(:type => 'Subnet::Ipv4')
+    assert_equal 'IPv4', subnet.network_type
+    subnet6 = Subnet.new(:type => 'Subnet::Ipv6')
+    assert_equal 'IPv6', subnet6.network_type
   end
 
-  test "network should be unique" do
-    set_attr(:network=, :mask=, :domains=, :name=)
-    @subnet.save
+  test '#network_type= should set #type' do
+    subnet = Subnet.new(:type => 'Subnet::Ipv4')
+    subnet.network_type = 'IPv6'
+    assert_equal 'Subnet::Ipv6', subnet.type
+  end
 
-    other_subnet = Subnet.create(:network => "123.123.123.1", :mask => "255.255.255.0")
-    assert !other_subnet.save
+  test '.new_network_type instantiates network_type from arguments' do
+    assert_instance_of Subnet::Ipv6, Subnet.new_network_type(:network_type => 'IPv6')
+  end
+
+  test '.new_network_type raises error for unknown network type' do
+    e = assert_raise(Foreman::Exception) { Subnet.new_network_type({:network_type => 'Unknown'}) }
+    assert_match /unknown network_type/, e.message
   end
 
   test "the name should be unique in the domain scope" do
-    create_a_domain_with_the_subnet
-
-    other_subnet = Subnet.new( :mask => "111.111.111.1",
-                                 :network => "255.255.252.0",
-                                 :name => "valid",
-                                 :domain_ids => [domains(:mydomain).id] )
-    assert !other_subnet.valid?
-    assert !other_subnet.save
+    first = FactoryGirl.create(:subnet_ipv6, :with_domains)
+    subnet = FactoryGirl.build(:subnet_ipv6, :name => first.name, :domains => first.domains)
+    refute subnet.valid?
   end
 
   test "when to_label is applied should show the domain, the mask and network" do
-    create_a_domain_with_the_subnet
+    subnet = FactoryGirl.create(:subnet_ipv4,
+                                :with_domains,
+                                :name => 'valid',
+                                :network => '123.123.123.0',
+                                :mask => '255.255.255.0'
+                               )
 
-    assert_equal "123.123.123.1/24", @subnet.to_label
+    assert_equal "valid (123.123.123.0/24)", subnet.to_label
   end
 
-  test "should find the subnet by ip" do
-    @subnet = Subnet.new(:network => "123.123.123.1",:mask => "255.255.255.0",:name => "valid")
-    assert @subnet.save
-    assert @subnet.domain_ids = [domains(:mydomain).id]
-    assert_equal @subnet, Subnet.subnet_for("123.123.123.1")
-  end
-
-  def set_attr(*attr)
-    attr.each do |param|
-      @subnet.send param, @attrs[param]
-    end
-  end
-
-  def create_a_domain_with_the_subnet
-    @domain = Domain.find_or_create_by_name("domain")
-    @subnet = Subnet.new(:network => "123.123.123.1",:mask => "255.255.255.0",:name => "valid")
-    assert @subnet.save
-    assert @subnet.domain_ids = [domains(:mydomain).id]
-    @subnet.save!
-  end
-
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_subnets"
-      role.permissions = ["#{operation}_subnets".to_sym]
-      @one.roles = [role]
-      @one.save!
-    end
-    User.current = @one
-  end
-
-  test "user with create permissions should be able to create" do
-    setup_user "create"
-    record = Subnet.create :name => "dummy2", :network => "1.2.3.4", :mask => "255.255.255.0"
-    assert record.domain_ids = [Domain.first.id]
-    assert record.valid?
-    assert !record.new_record?
-  end
-
-  test "user with view permissions should not be able to create" do
-    setup_user "view"
-    record =  Subnet.new :name => "dummy", :network => "1.2.3.4", :mask => "255.255.255.0"
-    assert record.valid?
-    assert !record.save
-    assert record.new_record?
-  end
-
-  test "user with destroy permissions should be able to destroy" do
-    setup_user "destroy"
-    record = subnets(:two)
-    as_admin do
-      record.domains.destroy_all
-      record.hosts.clear
-      record.interfaces.clear
-    end
-    assert record.destroy
-    assert record.frozen?
-  end
-
-  test "user with edit permissions should not be able to destroy" do
-    setup_user "edit"
-    record =  Subnet.first
-    assert !record.destroy
-    assert !record.frozen?
-  end
-
-  test "user with edit permissions should be able to edit" do
-    setup_user "edit"
-    record      =  Subnet.first
-    record.name = "renamed"
-    assert record.save
-  end
-
-  test "user with destroy permissions should not be able to edit" do
-    setup_user "destroy"
-    record      =  Subnet.first
-    record.name = "renamed"
-    as_admin do
-      record.domains = [domains(:unuseddomain)]
-    end
-    assert !record.save
-    assert record.valid?
-  end
-
-  test "from cant be bigger than to range" do
-    s      = subnets(:one)
-    s.to   = "2.3.4.15"
-    s.from = "2.3.4.17"
-    assert !s.save
-  end
-
-  test "should be able to save ranges" do
-    s=subnets(:one)
-    s.from = "2.3.4.15"
-    s.to   = "2.3.4.17"
-    assert s.save
-  end
-
-  test "should not be able to save ranges if they dont belong to the subnet" do
-    s=subnets(:one)
-    s.from = "2.3.3.15"
-    s.to   = "2.3.4.17"
-    assert !s.save
-  end
-
-  test "should not be able to save ranges if one of them is missing" do
-    s=subnets(:one)
-    s.from = "2.3.4.15"
-    assert !s.save
-    s.to   = "2.3.4.17"
-    assert s.save
+  # test module StripWhitespace which strips leading and trailing whitespace on :name field
+  test "should strip whitespace on name" do
+    s = FactoryGirl.build(:subnet_ipv6, :name => '    ABC Network     ')
+    assert s.save!
+    assert_equal "ABC Network", s.name
   end
 
   test "should strip whitespace before save" do
@@ -194,48 +89,37 @@ class SubnetTest < ActiveSupport::TestCase
     assert_equal "10.0.0.60", s.dns_secondary
   end
 
-  test "should fix typo with extra dots to single dot" do
-    s = subnets(:one)
-    s.network = "10..0.0..22"
-    assert s.save
-    assert_equal "10.0.0.22", s.network
+  test "should not destroy if hostgroup uses it" do
+    hostgroup = FactoryGirl.create(:hostgroup, :with_subnet)
+    subnet = hostgroup.subnet
+    refute subnet.destroy
+    assert_match /is being used by/, subnet.errors.full_messages.join("\n")
   end
 
-  test "should fix typo with extra 5 after 255" do
-    s = subnets(:one)
-    s.mask = "2555.255.25555.0"
-    assert s.save
-    assert_equal "255.255.255.0", s.mask
+  test "should not destroy if host uses it" do
+    host = FactoryGirl.create(:host, :with_subnet)
+    subnet = host.subnet
+    refute subnet.destroy
+    assert_match /is used by/, subnet.errors.full_messages.join("\n")
   end
 
-  test "should not allow an address great than 15 characters" do
-    s = subnets(:one)
-    s.mask = "255.255.255.1111"
-    refute s.save
-    assert_match /must be at most 15 characters/, s.errors.full_messages.join("\n")
-  end
+  test 'smart variable matches on subnet name' do
+    host = FactoryGirl.create(:host, :with_subnet, :puppetclasses => [puppetclasses(:one)])
+    subnet = host.subnet
+    key = FactoryGirl.create(:variable_lookup_key, :key_type => 'string',
+                             :default_value => 'default', :path => "subnet",
+                             :puppetclass => puppetclasses(:one))
 
-  test "should invalidate addresses are indeed invalid" do
-    s = subnets(:one)
-    # trailing dot
-    s.network = "100.101.102.103."
-    refute s.valid?
-    # more than 3 characters
-    s.network = "1234.101.102.103"
-    # missing dot
-    s.network = "100101.102.103."
-    refute s.valid?
-    # missing number
-    s.network = "100.101.102"
-    refute s.valid?
-    assert_equal "is invalid", s.errors[:network].first
-  end
+    value = as_admin do
+      LookupValue.create! :lookup_key_id => key.id,
+                          :match => "subnet=#{subnet.name}",
+                          :value => 'subnet'
+    end
+    key.reload
 
-  # test module StripWhitespace which strips leading and trailing whitespace on :name field
-  test "should strip whitespace on name" do
-    s = Subnet.new(:name => '    ABC Network     ', :network => "10.10.20.1", :mask => "255.255.255.0")
-    assert s.save!
-    assert_equal "ABC Network", s.name
+    assert_equal({key.id => {key.key => {:value => value.value,
+                                         :element => 'subnet',
+                                         :element_name => subnet.name}}},
+                 Classification::GlobalParam.new(:host => host).send(:values_hash))
   end
-
 end

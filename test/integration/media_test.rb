@@ -1,7 +1,6 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class MediaTest < ActionDispatch::IntegrationTest
-
+class MediaIntegrationTest < ActionDispatch::IntegrationTest
   test "index page" do
     assert_index_page(media_path,"Media","New Medium")
   end
@@ -10,7 +9,7 @@ class MediaTest < ActionDispatch::IntegrationTest
     assert_new_button(media_path,"New Medium",new_medium_path)
     fill_in "medium_name", :with => "Fedora Mirror 123"
     fill_in "medium_path", :with => "http://download.eng.tlv.redhat.com/pub/fedora123/linux/releases/$major/Fedora/$arch/os"
-    select "Redhat", :from => "medium_os_family"
+    select "Red Hat", :from => "medium_os_family"
     assert_submit_button(media_path)
     assert page.has_link? 'Fedora Mirror 123'
   end
@@ -23,5 +22,4 @@ class MediaTest < ActionDispatch::IntegrationTest
     assert_submit_button(media_path)
     assert page.has_link? 'Ubuntu Mirror 123'
   end
-
 end

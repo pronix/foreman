@@ -3,8 +3,7 @@ require 'fog_extensions/vsphere/mini_server'
 module FogExtensions
   module Vsphere
     class MiniServers
-
-      def initialize client, dc
+      def initialize(client, dc)
         @client = client
         @dc     = client.send(:find_datacenters, dc)[0]
       end
@@ -25,15 +24,16 @@ module FogExtensions
             ret.push(*allvmsbyfolder(entity, path))
           elsif entity.is_a?(RbVmomi::VIM::VirtualMachine)
             config = entity.config
-            if (!config.template && (uuid = config.instanceUuid))
+            if (config && !config.template && (uuid = config.instanceUuid))
               ret.push({ :vm => entity, :path => path, :uuid => uuid})
             end
           end
         end
         ret
       end
-        
+
       private
+
       attr_reader :client, :dc
     end
   end

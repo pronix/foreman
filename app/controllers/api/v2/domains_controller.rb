@@ -1,12 +1,10 @@
 module Api
   module V2
     class DomainsController < V2::BaseController
-
       include Api::Version2
       include Api::TaxonomyScope
 
       resource_description do
-        # TRANSLATORS: API documentation - do not translate
         desc <<-DOC
           Foreman considers a domain and a DNS zone as the same thing. That is, if you
           are planning to manage a site where all the machines are or the form
@@ -17,61 +15,69 @@ module Api
         DOC
       end
 
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_optional_nested_object
+      before_action :find_resource, :only => %w{show update destroy}
 
-      api :GET, "/domains/", "List of domains"
-      param :search, String, :desc => "Filter results"
-      param :order, String, :desc => "Sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/domains/", N_("List of domains")
+      api :GET, "/subnets/:subnet_id/domains", N_("List of domains per subnet")
+      api :GET, "/locations/:location_id/domains", N_("List of domains per location")
+      api :GET, "/organizations/:organization_id/domains", N_("List of domains per organization")
+      param :subnet_id, String, :desc => N_("ID of subnet")
+      param_group :taxonomy_scope, ::Api::V2::BaseController
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @domains = Domain.search_for(*search_options).paginate(paginate_options)
+        @domains = resource_scope_for_index
       end
 
-      api :GET, "/domains/:id/", "Show a domain."
-      param :id, :identifier, :required => true, :desc => "May be numerical id or domain name"
+      api :GET, "/domains/:id/", N_("Show a domain")
+      param :id, :identifier, :required => true, :desc => N_("Numerical ID or domain name")
 
       def show
       end
 
-      api :POST, "/domains/", "Create a domain."
-      # TRANSLATORS: API documentation - do not translate
+      def_param_group :domain do
+        param :domain, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true, :desc => N_("The full DNS domain name")
+          param :fullname, String, :required => false, :allow_nil => true, :desc => N_("Description of the domain")
+          param :dns_id, :number, :required => false, :allow_nil => true, :desc => N_("DNS proxy to use within this domain")
+          param :domain_parameters_attributes, Array, :required => false, :desc => N_("Array of parameters (name, value)")
+          param_group :taxonomies, ::Api::V2::BaseController
+        end
+      end
+
+      api :POST, "/domains/", N_("Create a domain")
       description <<-DOC
         The <b>fullname</b> field is used for human readability in reports
         and other pages that refer to domains, and also available as
         an external node parameter
       DOC
-      param :domain, Hash, :required => true do
-        param :name, String, :required => true, :desc => "The full DNS Domain name"
-        param :fullname, String, :required => false, :allow_nil => true, :desc => "Full name describing the domain"
-        param :dns_id, :number, :required => false, :allow_nil => true, :desc => "DNS Proxy to use within this domain"
-        param :domain_parameters_attributes, Array, :required => false, :desc => "Array of parameters (name, value)"
-      end
+      param_group :domain, :as => :create
 
       def create
         @domain = Domain.new(params[:domain])
         process_response @domain.save
       end
 
-      api :PUT, "/domains/:id/", "Update a domain."
+      api :PUT, "/domains/:id/", N_("Update a domain")
       param :id, :identifier, :required => true
-      param :domain, Hash, :required => true do
-        param :name, String, :allow_nil => true, :desc => "The full DNS Domain name"
-        param :fullname, String, :allow_nil => true, :desc => "Full name describing the domain"
-        param :dns_id, :number, :allow_nil => true, :desc => "DNS Proxy to use within this domain"
-        param :domain_parameters_attributes, Array, :desc => "Array of parameters (name, value)"
-      end
+      param_group :domain
 
       def update
         process_response @domain.update_attributes(params[:domain])
       end
 
-      api :DELETE, "/domains/:id/", "Delete a domain."
+      api :DELETE, "/domains/:id/", N_("Delete a domain")
       param :id, :identifier, :required => true
 
       def destroy
         process_response @domain.destroy
+      end
+
+      private
+
+      def allowed_nested_id
+        %w(subnet_id location_id organization_id)
       end
     end
   end

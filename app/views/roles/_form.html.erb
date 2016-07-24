@@ -1,39 +1,32 @@
-<% title_actions check_all_roles_links %>
-
 <%= form_for @role do |f| %>
   <%= base_errors_for @role %>
 
-  <%= text_f f, :name, :class => @role.builtin? ? "disabled" : ""  %>
+  <ul class="nav nav-tabs" data-tabs="tabs">
+    <li class="active"><a href="#primary" data-toggle="tab"><%= _("Role") %></a></li>
+    <% if User.current.allowed_to?(:view_filters) %>
+      <li><a href="#filters" data-toggle="tab"><%= _('Filters') %></a></li>
+    <% end %>
+  </ul>
 
-  <div class='control-group'>
-    <label class='control-label'><%= _('Permissions') %></label>
-    <input placeholder="<%= _('Filter permissions') %>" class="search-query" onkeyup="filter_permissions(this);" type='text'>
-  </div>
-
-  <% perms_by_block = @role.setable_permissions.group_by {|p| p.security_block.to_s} %>
-  <div class='row'>
-  <% perms_by_block.keys.sort.in_groups(2,false) do |column| %>
-    <div class="span4">
-      <% column.each do |block| %>
-        <div class="control-group">
-          <%= label_tag 'role[permissions]', image_tag("bullet_toggle_plus.png") + " " + block.humanize,:class=>"control-label", :data=>{:toggle=>'collapse', :target=>"##{block}"} %>
-          <div class="controls collapse" id="<%= block %>">
-            <ul class="inputs-list">
-              <% perms_by_block[block].each do |permission| %>
-                <li>
-                  <%= content_tag :div, 'role[permissions][]' do %>
-                    <%= check_box_tag 'role[permissions][]', permission.name, (@role.permissions.include? permission.name), :class => "role_checkbox" %>
-                    <%= permission.name %>
-                    <%= hidden_field_tag 'role[permissions][]' %>
-                  <% end %>
-                </li>
-              <% end %>
-            </ul>
-          </div>
-        </div>
-      <% end %>
+  <div class="tab-content">
+    <div class="tab-pane active" id="primary">
+      <%= text_f f, :name, :class => @role.builtin? ? "disabled" : ""  %>
+      <%= hidden_field_tag :original_role_id, @original_role_id if @cloned_role %>
     </div>
-  <% end %>
+    <div class="tab-pane" id="filters">
+      <% if @role.new_record? %>
+        <%= alert :header => '', :class => 'alert-warning',
+                  :text => _("Please save the role first. You can edit it later to add filters") %>
+      <% else %>
+        <div data-ajax-url="<%= filters_path(:role_id => @role, :paginate => 'client') %> table" data-on-complete="activateDatatables">
+          <%= spinner(_('Loading filters ...')) %>
+        </div>
+        <hr>
+        <%= link_to_if_authorized(_("New filter"), hash_for_new_filter_path(:role_id => @role),
+                                  { :class => 'btn btn-success pull-right'} ) %>
+      </div>
+    <% end %>
   </div>
+
   <%= submit_or_cancel f %>
 <% end %>

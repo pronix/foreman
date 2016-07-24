@@ -1,6 +1,11 @@
 require 'test_helper'
 
 class Api::V1::HostsControllerTest < ActionController::TestCase
+  def setup
+    @host = FactoryGirl.create(:host)
+    @ptable = FactoryGirl.create(:ptable)
+    @ptable.operatingsystems = [ Operatingsystem.find_by_name('Redhat') ]
+  end
 
   def valid_attrs
     { :name                => 'testhost11',
@@ -8,10 +13,15 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
       :domain_id           => domains(:mydomain).id,
       :ip                  => '10.0.0.20',
       :mac                 => '52:53:00:1e:85:93',
+      :ptable_id           => @ptable.id,
+      :medium_id           => media(:one).id,
       :architecture_id     => Architecture.find_by_name('x86_64').id,
       :operatingsystem_id  => Operatingsystem.find_by_name('Redhat').id,
-      :puppet_proxy_id     => smart_proxies(:one).id,
-      :compute_resource_id => compute_resources(:one).id
+      :puppet_proxy_id     => smart_proxies(:puppetmaster).id,
+      :compute_resource_id => compute_resources(:one).id,
+      :root_pass           => "xybxa6JUkz63w",
+      :location_id         => taxonomies(:location1).id,
+      :organization_id     => taxonomies(:organization1).id
     }
   end
 
@@ -20,14 +30,14 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
     assert_response :success
     assert_not_nil assigns(:hosts)
     hosts = ActiveSupport::JSON.decode(@response.body)
-    assert !hosts.empty?
+    assert_not_empty hosts
   end
 
   test "should show individual record" do
-    get :show, { :id => hosts(:one).to_param }
+    get :show, { :id => @host.to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
-    assert !show_response.empty?
+    assert_not_empty show_response
   end
 
   test "should create host" do
@@ -36,7 +46,26 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
       post :create, { :host => valid_attrs }
     end
     assert_response :success
-    last_host = Host.order('id desc').last
+  end
+
+  test "should create host with host_parameters_attributes" do
+    disable_orchestration
+    Foreman::Deprecation.expects(:api_deprecation_warning).with('Field host_parameters_attributes.nested ignored')
+    assert_difference('Host.count') do
+      attrs = [{"name" => "compute_resource_id", "value" => "1", "nested" => "true"}]
+      post :create, { :host => valid_attrs.merge(:host_parameters_attributes => attrs) }
+    end
+    assert_response :created
+  end
+
+  test "should create host with host_parameters_attributes sent in a hash" do
+    disable_orchestration
+    Foreman::Deprecation.expects(:api_deprecation_warning).with('Field host_parameters_attributes.nested ignored')
+    assert_difference('Host.count') do
+      attrs = {"0" => {"name" => "compute_resource_id", "value" => "1", "nested" => "true"}}
+      post :create, { :host => valid_attrs.merge(:host_parameters_attributes => attrs) }
+    end
+    assert_response :created
   end
 
   test "should create host with managed is false if parameter is passed" do
@@ -48,19 +77,20 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
   end
 
   test "should update host" do
-    put :update, { :id => hosts(:two).to_param, :host => { } }
+    put :update, { :id => @host.to_param, :host => { :name => 'testhost1435' } }
     assert_response :success
   end
 
   test "should destroy hosts" do
     assert_difference('Host.count', -1) do
-      delete :destroy, { :id => hosts(:one).to_param }
+      delete :destroy, { :id => @host.to_param }
     end
     assert_response :success
   end
 
   test "should show status hosts" do
-    get :status, { :id => hosts(:one).to_param }
+    Foreman::Deprecation.expects(:api_deprecation_warning).with(regexp_matches(%r{/status route is deprecated}))
+    get :status, { :id => @host.to_param }
     assert_response :success
   end
 
@@ -73,76 +103,73 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
   end
 
   test "should allow access to restricted user who owns the host" do
-    as_user :restricted do
-      get :show, { :id => hosts(:owned_by_restricted).to_param }
-    end
+    host = FactoryGirl.create(:host, :owner => users(:restricted))
+    setup_user 'view', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    get :show, { :id => host.to_param }
     assert_response :success
   end
 
   test "should allow to update for restricted user who owns the host" do
     disable_orchestration
-    as_user :restricted do
-      put :update, { :id => hosts(:owned_by_restricted).to_param, :host => {} }
-    end
+    host = FactoryGirl.create(:host, :owner => users(:restricted))
+    setup_user 'edit', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    put :update, { :id => host.to_param, :host => {:name => 'testhost1435'} }
     assert_response :success
   end
 
   test "should allow destroy for restricted user who owns the hosts" do
+    host = FactoryGirl.create(:host, :owner => users(:restricted))
     assert_difference('Host.count', -1) do
-      as_user :restricted do
-        delete :destroy, { :id => hosts(:owned_by_restricted).to_param }
-      end
+      setup_user 'destroy', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+      delete :destroy, { :id => host.to_param }
     end
     assert_response :success
   end
 
   test "should allow show status for restricted user who owns the hosts" do
-    as_user :restricted do
-      get :status, { :id => hosts(:owned_by_restricted).to_param }
-    end
+    host = FactoryGirl.create(:host, :owner => users(:restricted))
+    setup_user 'view', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    Foreman::Deprecation.expects(:api_deprecation_warning).with(regexp_matches(%r{/status route is deprecated}))
+    get :status, { :id => host.to_param }
     assert_response :success
   end
 
   test "should not allow access to a host out of users hosts scope" do
-    as_user :restricted do
-      get :show, { :id => hosts(:one).to_param }
-    end
+    setup_user 'view', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    get :show, { :id => @host.to_param }
     assert_response :not_found
   end
 
   test "should not list a host out of users hosts scope" do
-    as_user :restricted do
-      get :index, {}
-    end
+    host = FactoryGirl.create(:host, :owner => users(:restricted))
+    setup_user 'view', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    get :index, {}
     assert_response :success
     hosts = ActiveSupport::JSON.decode(@response.body)
     ids = hosts.map { |hash| hash['host']['id'] }
-    assert !ids.include?(hosts(:one).id)
-    assert ids.include?(hosts(:owned_by_restricted).id)
+    refute_includes ids, @host.id
+    assert_includes ids, host.id
   end
 
   test "should not update host out of users hosts scope" do
-    as_user :restricted do
-      put :update, { :id => hosts(:one).to_param }
-    end
+    setup_user 'edit', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    put :update, { :id => @host.to_param }
     assert_response :not_found
   end
 
   test "should not delete hosts out of users hosts scope" do
-    as_user :restricted do
-      delete :destroy, { :id => hosts(:one).to_param }
-    end
+    setup_user 'destroy', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    delete :destroy, { :id => @host.to_param }
     assert_response :not_found
   end
 
   test "should not show status of hosts out of users hosts scope" do
-    as_user :restricted do
-      get :status, { :id => hosts(:one).to_param }
-    end
+    setup_user 'view', 'hosts', "owner_type = User and owner_id = #{users(:restricted).id}", :restricted
+    get :status, { :id => @host.to_param }
     assert_response :not_found
   end
 
-  def set_remote_user_to user
+  def set_remote_user_to(user)
     @request.env['REMOTE_USER'] = user.login
   end
 
@@ -158,5 +185,4 @@ class Api::V1::HostsControllerTest < ActionController::TestCase
     get :show, {:id => host.to_param}
     assert_response :success
   end
-
 end

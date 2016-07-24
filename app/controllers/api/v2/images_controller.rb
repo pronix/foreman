@@ -1,60 +1,64 @@
 module Api
   module V2
     class ImagesController < V2::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :find_compute_resource
+      before_action :find_required_nested_object
+      before_action :find_resource, :only => %w{show update destroy}
 
-      api :GET, "/compute_resources/:compute_resource_id/images/", "List all images for compute resource"
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
-      param :compute_resource_id, :identifier, :required => true
+      api :GET, "/compute_resources/:compute_resource_id/images/", N_("List all images for a compute resource")
+      api :GET, "/operatingsystems/:operatingsystem_id/images/", N_("List all images for operating system")
+      api :GET, "/architectures/:architecture_id/images/", N_("List all images for architecture")
+      param :compute_resource_id, String, :desc => N_("ID of compute resource")
+      param :architecture_id, String, :desc => N_("ID of architecture")
+      param :operatingsystem_id, String, :desc => N_("ID of operating system")
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @images = @compute_resource.images.search_for(*search_options).paginate(paginate_options)
+        @images = resource_scope_for_index
       end
 
-      api :GET, "/compute_resources/:compute_resource_id/images/:id/", "Show an image"
+      api :GET, "/compute_resources/:compute_resource_id/images/:id/", N_("Show an image")
+      api :GET, "/operatingsystems/:operatingsystem_id/images/:id/", N_("Show an image")
+      api :GET, "/architectures/:architecture_id/images/:id/", N_("Show an image")
       param :id, :identifier, :required => true
-      param :compute_resource_id, :identifier, :required => true
+      param :compute_resource_id, String, :desc => N_("ID of compute resource")
+      param :architecture_id, String, :desc => N_("ID of architecture")
+      param :operatingsystem_id, String, :desc => N_("ID of operating system")
 
       def show
       end
 
-      api :POST, "/compute_resources/:compute_resource_id/images/", "Create a image"
-      param :compute_resource_id, :identifier, :required => true
-      param :image, Hash, :required => true do
-        param :name, String, :required => true
-        param :username, String, :required => true
-        param :uuid, String, :required => true
-        param :compute_resource_id, :number, :required => true
-        param :architecture_id, :number, :required => true
-        param :operatingsystem_id, :number, :required => true
+      def_param_group :image do
+        param :image, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true
+          param :username, String, :required => true
+          param :uuid, String, :required => true
+          param :password, String, :required => false
+          param :compute_resource_id, String, :desc => N_("ID of compute resource")
+          param :architecture_id, String, :desc => N_("ID of architecture")
+          param :operatingsystem_id, String, :desc => N_("ID of operating system")
+          param :user_data, :bool, :desc => N_("Whether or not the image supports user data"), :allow_nil => true
+        end
       end
+
+      api :POST, "/compute_resources/:compute_resource_id/images/", N_("Create an image")
+      param :compute_resource_id, :identifier, :required => true
+      param_group :image, :as => :create
 
       def create
-        @image = @compute_resource.images.new(params[:image])
-        process_response @image.save, @compute_resource
+        @image = nested_obj.images.new(params[:image])
+        process_response @image.save, nested_obj
       end
 
-      api :PUT, "/compute_resources/:compute_resource_id/images/:id/", "Update a image."
+      api :PUT, "/compute_resources/:compute_resource_id/images/:id/", N_("Update an image")
       param :compute_resource_id, :identifier, :required => true
       param :id, :identifier, :required => true
-      param :image, Hash, :required => true do
-        param :name, String
-        param :username, String
-        param :uuid, String
-        param :compute_resource_id, :number
-        param :architecture_id, :number
-        param :operatingsystem_id, :number
-      end
+      param_group :image
 
       def update
         process_response @image.update_attributes(params[:image])
       end
 
-      api :DELETE, "/compute_resources/:compute_resource_id/images/:id/", "Delete an image."
+      api :DELETE, "/compute_resources/:compute_resource_id/images/:id/", N_("Delete an image")
       param :compute_resource_id, :identifier, :required => true
       param :id, :identifier, :required => true
 
@@ -64,10 +68,9 @@ module Api
 
       private
 
-      def find_compute_resource
-        @compute_resource = ComputeResource.find(params[:compute_resource_id])
+      def allowed_nested_id
+        %w(compute_resource_id operatingsystem_id architecture_id)
       end
-
     end
   end
 end

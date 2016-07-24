@@ -1,7 +1,6 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class CommonParameterTest < ActionDispatch::IntegrationTest
-
+class CommonParameterIntegrationTest < ActionDispatch::IntegrationTest
   test "index page" do
     assert_index_page(common_parameters_path,"Global Parameters","New Parameter")
   end
@@ -23,4 +22,10 @@ class CommonParameterTest < ActionDispatch::IntegrationTest
     assert page.has_content? 'mynewvalue'
   end
 
+  test "does not display editor on hidden value" do
+    visit common_parameters_path
+    click_link "test"
+    check "common_parameter_hidden_value"
+    page.assert_no_selector 'editor_source'
+  end
 end

@@ -1,12 +1,11 @@
 require 'test_helper'
 
 class Api::V1::ImagesControllerTest < ActionController::TestCase
-
   def valid_attrs
     { :name                => 'TestImage', :username => 'ec2-user', :uuid => 'abcdef',
       :operatingsystem_id  => Operatingsystem.first.id,
       :compute_resource_id => ComputeResource.first.id,
-      :architecture_id     => Architecture.first.id,
+      :architecture_id     => Architecture.first.id
     }
   end
 
@@ -33,7 +32,7 @@ class Api::V1::ImagesControllerTest < ActionController::TestCase
   end
 
   test "should update image" do
-    put :update, { :compute_resource_id => images(:two).compute_resource_id, :id => images(:one).to_param, :image => { } }
+    put :update, { :compute_resource_id => images(:two).compute_resource_id, :id => images(:one).to_param, :image => { :name => "testimagegergt"} }
     assert_response :success
   end
 
@@ -43,5 +42,4 @@ class Api::V1::ImagesControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

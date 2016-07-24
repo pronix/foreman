@@ -1,10 +1,16 @@
 require 'test_helper'
+require 'functional/shared/report_host_permissions_test'
 
 class Api::V2::ReportsControllerTest < ActionController::TestCase
+  include ::ReportHostPermissionsTest
+
+  setup do
+    Foreman::Deprecation.expects(:api_deprecation_warning).with(regexp_matches(%r{/reports were moved to /config_reports}))
+  end
 
   describe "Non Admin User" do
     def setup
-      User.current = users(:one) #use an unpriviledged user, not apiadmin
+      User.current = users(:one) #use an unprivileged user, not apiadmin
     end
 
     def create_a_puppet_transaction_report
@@ -19,7 +25,7 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
 
     def test_create_invalid
       User.current=nil
-      post :create, {:report => ["not a hash", "throw an error"]  }, set_session_user
+      post :create, {:report => ["not a hash", "throw an error"] }, set_session_user
       assert_response :unprocessable_entity
     end
 
@@ -27,35 +33,36 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
       User.current=nil
       post :create, {:report => create_a_puppet_transaction_report }, set_session_user
       assert_response :success
+      Foreman::Deprecation.expects(:api_deprecation_warning)
       post :create, {:report => create_a_puppet_transaction_report }, set_session_user
       assert_response :unprocessable_entity
     end
 
-    test 'when ":restrict_registered_puppetmasters" is false, HTTP requests should be able to create a report' do
-      Setting[:restrict_registered_puppetmasters] = false
+    test 'when ":restrict_registered_smart_proxies" is false, HTTP requests should be able to create a report' do
+      Setting[:restrict_registered_smart_proxies] = false
       SETTINGS[:require_ssl] = false
 
       Resolv.any_instance.stubs(:getnames).returns(['else.where'])
       post :create, {:report => create_a_puppet_transaction_report }
       assert_nil @controller.detected_proxy
-      assert_response :success
+      assert_response :created
     end
 
     test 'hosts with a registered smart proxy on should create a report successfully' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = false
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = false
 
       proxy = smart_proxies(:puppetmaster)
-      host   = URI.parse(proxy.url).host
+      host = URI.parse(proxy.url).host
       Resolv.any_instance.stubs(:getnames).returns([host])
       post :create, {:report => create_a_puppet_transaction_report }
       assert_equal proxy, @controller.detected_proxy
-      assert_response :success
+      assert_response :created
     end
 
     test 'hosts without a registered smart proxy on should not be able to create a report' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = false
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = false
 
       Resolv.any_instance.stubs(:getnames).returns(['another.host'])
       post :create, {:report => create_a_puppet_transaction_report }
@@ -63,19 +70,19 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
     end
 
     test 'hosts with a registered smart proxy and SSL cert should create a report successfully' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = true
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = true
 
       @request.env['HTTPS'] = 'on'
       @request.env['SSL_CLIENT_S_DN'] = 'CN=else.where'
       @request.env['SSL_CLIENT_VERIFY'] = 'SUCCESS'
       post :create, {:report => create_a_puppet_transaction_report }
-      assert_response :success
+      assert_response :created
     end
 
     test 'hosts without a registered smart proxy but with an SSL cert should not be able to create a report' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = true
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = true
 
       @request.env['HTTPS'] = 'on'
       @request.env['SSL_CLIENT_S_DN'] = 'CN=another.host'
@@ -85,8 +92,8 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
     end
 
     test 'hosts with an unverified SSL cert should not be able to create a report' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = true
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = true
 
       @request.env['HTTPS'] = 'on'
       @request.env['SSL_CLIENT_S_DN'] = 'CN=else.where'
@@ -95,9 +102,9 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
       assert_equal 403, @response.status
     end
 
-    test 'when "require_ssl_puppetmasters" and "require_ssl" are true, HTTP requests should not be able to create a report' do
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = true
+    test 'when "require_ssl_smart_proxies" and "require_ssl" are true, HTTP requests should not be able to create a report' do
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = true
       SETTINGS[:require_ssl] = true
 
       Resolv.any_instance.stubs(:getnames).returns(['else.where'])
@@ -105,19 +112,20 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
       assert_equal 403, @response.status
     end
 
-    test 'when "require_ssl_puppetmasters" is true and "require_ssl" is false, HTTP requests should be able to create reports' do
-      # since require_ssl_puppetmasters is only applicable to HTTPS connections, both should be set
-      Setting[:restrict_registered_puppetmasters] = true
-      Setting[:require_ssl_puppetmasters] = true
+    test 'when "require_ssl_smart_proxies" is true and "require_ssl" is false, HTTP requests should be able to create reports' do
+      # since require_ssl_smart_proxies is only applicable to HTTPS connections, both should be set
+      Setting[:restrict_registered_smart_proxies] = true
+      Setting[:require_ssl_smart_proxies] = true
       SETTINGS[:require_ssl] = false
 
       Resolv.any_instance.stubs(:getnames).returns(['else.where'])
       post :create, {:report => create_a_puppet_transaction_report }
-      assert_response :success
+      assert_response :created
     end
   end
 
   test "should get index" do
+    FactoryGirl.create(:report)
     get :index, { }
     assert_response :success
     assert_not_nil assigns(:reports)
@@ -126,21 +134,25 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
   end
 
   test "should show individual record" do
-    get :show, { :id => reports(:report).to_param }
+    report = FactoryGirl.create(:report)
+    get :show, { :id => report.to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
     assert !show_response.empty?
   end
 
   test "should destroy report" do
+    report = FactoryGirl.create(:report)
     assert_difference('Report.count', -1) do
-      delete :destroy, { :id => reports(:report).to_param }
+      delete :destroy, { :id => report.to_param }
     end
     assert_response :success
+    refute Report.find_by_id(report.id)
   end
 
   test "should get reports for given host only" do
-    get :index, {:host_id => hosts(:one).to_param }
+    report = FactoryGirl.create(:report)
+    get :index, {:host_id => report.host.to_param }
     assert_response :success
     assert_not_nil assigns(:reports)
     reports = ActiveSupport::JSON.decode(@response.body)
@@ -149,7 +161,8 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
   end
 
   test "should return empty result for host with no reports" do
-    get :index, {:host_id => hosts(:two).to_param }
+    host = FactoryGirl.create(:host)
+    get :index, {:host_id => host.to_param }
     assert_response :success
     assert_not_nil assigns(:reports)
     reports = ActiveSupport::JSON.decode(@response.body)
@@ -158,24 +171,36 @@ class Api::V2::ReportsControllerTest < ActionController::TestCase
   end
 
   test "should get last report" do
-    get :last
+    reports = FactoryGirl.create_list(:config_report, 5)
+    get :last, set_session_user
     assert_response :success
     assert_not_nil assigns(:report)
     report = ActiveSupport::JSON.decode(@response.body)
     assert !report.empty?
+    assert_equal reports.last, Report.find(report['id'])
   end
 
   test "should get last report for given host only" do
-    get :last, {:host_id => hosts(:one).to_param }
+    main_report = FactoryGirl.create(:config_report)
+    FactoryGirl.create_list(:config_report, 5)
+    get :last, {:host_id => main_report.host.to_param }, set_session_user
     assert_response :success
     assert_not_nil assigns(:report)
     report = ActiveSupport::JSON.decode(@response.body)
     assert !report.empty?
+    assert_equal main_report, Report.find(report['id'])
   end
 
   test "should give error if no last report for given host" do
-    get :last, {:host_id => hosts(:two).to_param }
-    assert_response 500
+    host = FactoryGirl.create(:host)
+    get :last, {:host_id => host.to_param }
+    assert_response :not_found
   end
 
+  test 'cannot view the last report without hosts view permission' do
+    setup_user('view', 'config_reports')
+    report = FactoryGirl.create(:report)
+    get :last, { :host_id => report.host.id }, set_session_user.merge(:user => User.current.id)
+    assert_response :not_found
+  end
 end

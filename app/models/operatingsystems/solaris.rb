@@ -1,12 +1,16 @@
 class Solaris < Operatingsystem
   PXEFILES = {:initrd => "x86.miniroot", :kernel => "multiboot"}
 
+  class << self
+    delegate :model_name, :to => :superclass
+  end
+
   def file_prefix
-    "#{to_s}".gsub(/[\s\(\)]/,"-").gsub("--", "-").gsub(/-\Z/, "")
+    (self).to_s.gsub(/[\s\(\)]/,"-").gsub("--", "-").gsub(/-\Z/, "")
   end
 
   # sets the prefix for the tftp files based on the OS
-  def pxe_prefix(architecture=nil)
+  def pxe_prefix(architecture = nil)
     "boot/#{file_prefix}"
   end
 
@@ -37,7 +41,7 @@ class Solaris < Operatingsystem
     pxedir + "/" + PXEFILES[file]
   end
 
-  def boot_filename host
+  def boot_filename(host)
     #handle things like gpxelinux/ gpxe / pxelinux here
     if host.jumpstart?
       "Solaris-#{major}.#{minor}-#{release_name}-#{host.model.hardware_model}-inetboot"
@@ -56,17 +60,13 @@ class Solaris < Operatingsystem
   end
 
   # Calculates the media's path in relation to the domain and convert host to an IP
-  def media_path medium, domain
+  def media_path(medium, domain)
     resolv_nfs_path medium.media_host, medium.media_dir, domain
   end
 
   # Calculates the jumpstart's path in relation to the domain and convert host to an IP
-  def jumpstart_path medium, domain
+  def jumpstart_path(medium, domain)
     resolv_nfs_path medium.jumpstart_host, medium.jumpstart_dir, domain
-  end
-  # Override the class representation, as this breaks many rails helpers
-  def class
-    Operatingsystem
   end
 
   # Does this OS family support a build variant that is constructed from a prebuilt archive
@@ -83,7 +83,7 @@ class Solaris < Operatingsystem
     true
   end
 
-  def jumpstart_params host, vendor
+  def jumpstart_params(host, vendor)
     # root server and install server are always the same under Foreman
     server_name = host.medium.media_host
     server_ip   = host.domain.resolver.getaddress(server_name).to_s
@@ -103,12 +103,16 @@ class Solaris < Operatingsystem
     }
   end
 
+  def display_family
+    "Solaris"
+  end
+
   private
-  def resolv_nfs_path host, dir, domain
-    host = host + ".#{domain.name}" unless host =~ /\./
+
+  def resolv_nfs_path(host, dir, domain)
+    host += ".#{domain.name}" unless host =~ /\./
     # If host is already an IP then this works fine
     ip = domain.resolver.getaddress(host)
     "#{ip}:#{dir}"
   end
-
 end

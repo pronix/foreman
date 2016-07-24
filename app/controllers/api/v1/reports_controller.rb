@@ -1,8 +1,9 @@
 module Api
   module V1
     class ReportsController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :setup_search_options, :only => [:index, :last]
+      before_action :deprecated
+      before_action :find_resource, :only => %w{show destroy}
+      before_action :setup_search_options, :only => [:index, :last]
 
       api :GET, "/reports/", "List all reports."
       param :search, String, :desc => "filter results"
@@ -11,7 +12,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @reports = Report.my_reports.includes(:logs => [:source, :message]).
+        @reports = ConfigReport.
+          authorized(:view_config_reports).
+          my_reports.
           search_for(*search_options).paginate(paginate_options)
       end
 
@@ -21,7 +24,7 @@ module Api
       def show
       end
 
-      api :DELETE, "/ptables/:id/", "Delete a report."
+      api :DELETE, "/reports/:id/", "Delete a report."
       param :id, String, :required => true
 
       def destroy
@@ -32,12 +35,35 @@ module Api
       param :id, :identifier, :required => true
 
       def last
-        conditions = { :host_id => Host.find_by_name(params[:host_id]).try(:id) } unless params[:host_id].blank?
-        max_id = Report.my_reports.where(conditions).maximum(:id)
-        @report = Report.includes(:logs => [:message, :source]).find(max_id)
+        conditions = { :host_id => Host.authorized(:view_hosts).friendly.find(params[:host_id]).try(:id) } if params[:host_id].present?
+        max_id = resource_scope.where(conditions).maximum(:id)
+        @report = resource_scope.includes(:logs => [:message, :source]).find(max_id)
         render :show
       end
 
+      private
+
+      def deprecated
+        Foreman::Deprecation.api_deprecation_warning("Reports were renamed to ConfigReports")
+      end
+
+      def resource_scope(options = {})
+        options.merge!(:permission => :view_config_reports)
+        super(options).my_reports
+      end
+
+      def resource_class
+        ConfigReport
+      end
+
+      def action_permission
+        case params[:action]
+        when 'last'
+          'view'
+        else
+          super
+        end
+      end
     end
   end
 end

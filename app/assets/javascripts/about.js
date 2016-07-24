@@ -1,20 +1,21 @@
 $(function() {
-  $(".proxy-status, .compute-status").each(function(index, item) {
+  "use strict";
+  $(".compute-status").each(function(index, item) {
     var item = $(item);
     var url = item.data('url');
     $.ajax({
       type: 'post',
       url:  url,
       success: function(response) {
-        item.text(_(response.status));
+        item.text(__(response.status));
         item.attr('title',response.message);
-        if(response.status == "OK"){
-          item.addClass('badge badge-success')
+        if(response.status === "OK"){
+          item.addClass('label label-success')
         }else{
-          item.addClass('badge badge-important')
+          item.addClass('label label-danger')
         }
         item.tooltip({html: true});
       }
-    })
-  })
+    });
+  });
 });

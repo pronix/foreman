@@ -2,24 +2,26 @@ require 'orchestration/task'
 module Orchestration
   # Represents tasks queue for orchestration
   class Queue
-
     attr_reader :items
     STATUS = %w[ pending running failed completed rollbacked conflict canceled]
+
+    delegate :count, :empty?, :to => :items
+    delegate :to_json, :to => :all
 
     def initialize
       @items = []
     end
 
-    def create options
+    def create(options)
       options[:status] ||= default_status
       items << Task.new(options)
     end
 
-    def delete item
+    def delete(item)
       @items.delete item
     end
 
-    def find_by_name name
+    def find_by_name(name)
       items.each {|task| return task if task.name == name}
     end
 
@@ -27,20 +29,9 @@ module Orchestration
       items.sort
     end
 
-    def count
-      items.count
-    end
-
-    def empty?
-      items.empty?
-    end
-
     def clear
-      @items = [] && true
-    end
-
-    def to_json
-      all.to_json
+      @items = []
+      true
     end
 
     STATUS.each do |s|

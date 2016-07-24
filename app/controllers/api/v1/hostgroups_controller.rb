@@ -1,7 +1,7 @@
 module Api
   module V1
     class HostgroupsController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/hostgroups/", "List all hostgroups."
       param :search, String, :desc => "filter results"
@@ -10,7 +10,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @hostgroups = Hostgroup.includes(:hostgroup_classes, :group_parameters).
+        @hostgroups = Hostgroup.
+          authorized(:view_hostgroups).
+          includes(:hostgroup_classes, :group_parameters).
           search_for(*search_options).paginate(paginate_options)
       end
 
@@ -64,9 +66,12 @@ module Api
       param :id, :identifier, :required => true
 
       def destroy
-        process_response @hostgroup.destroy
+        if @hostgroup.has_children?
+          render :json => {'message'=> _("Cannot delete group %{current} because it has nested groups.") % { :current => @hostgroup.title } }, :status => :conflict
+        else
+          process_response @hostgroup.destroy
+        end
       end
-
     end
   end
 end

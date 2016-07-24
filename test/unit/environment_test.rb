@@ -1,28 +1,12 @@
 require 'test_helper'
 
 class EnvironmentTest < ActiveSupport::TestCase
-  test "should have name" do
-    env = Environment.new
-    assert !env.valid?
-  end
-
-  test "name should be unique" do
-    as_admin do
-      env = Environment.create :name => "foo"
-      env2 = Environment.new :name => env.name
-      assert !env2.valid?
-    end
-  end
-
-  test "name should have no spaces" do
-    env = Environment.new :name => "f o o"
-    assert !env.valid?
-  end
-
-  test "name should be alphanumeric" do
-    env = Environment.new :name => "test&fail"
-    assert !env.valid?
-  end
+  should validate_presence_of(:name)
+  should validate_uniqueness_of(:name)
+  should have_many(:provisioning_templates).through(:template_combinations)
+  should have_many(:puppetclasses).through(:environment_classes)
+  should have_many(:trends).class_name('ForemanTrend')
+  should allow_mass_assignment_of(:name)
 
   test "to_label should print name" do
     env = Environment.new :name => "foo"
@@ -34,4 +18,7 @@ class EnvironmentTest < ActiveSupport::TestCase
     assert_equal env.to_s, env.name
   end
 
+  test 'should create environment with the name "new"' do
+    assert FactoryGirl.build(:environment, :name => 'new').valid?
+  end
 end

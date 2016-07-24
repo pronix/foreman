@@ -1,8 +1,9 @@
 require "fileutils"
 
+DOMAIN = ENV['DOMAIN'] || 'foreman'
+
 desc 'Locale specific tasks: locale:find'
 namespace :locale do
-
   desc 'Extract strings from model'
   task :find_model => "gettext:store_model_attributes" do
     # Add some extra comments for translators and remove the following entires:
@@ -25,25 +26,24 @@ namespace :locale do
     FileUtils.rm "#{filename}.tmp"
   end
 
-  # just revert to the traditional underscore.
-  GettextI18nRailsJs::JsAndCoffeeParser.js_gettext_function = '_' if defined? GettextI18nRailsJs
-
   desc 'Extract strings from codebase'
-  task :find_code => ["gettext:find", "gettext:po_to_json"]
+  task :find_code => ["gettext:find"]
 
   desc 'Extract strings from model and from codebase'
-  task :find => [:find_model, :find_code] do
-    # do not commit PO string merge into git (we are using transifex.com)
-    `git checkout -- locale/*/*.po`
-
+  find_dependencies = [:find_model, :find_code]
+  find_dependencies.shift if ENV['SKIP_MODEL']
+  task :find => find_dependencies do
     # find malformed strings
-    errors = File.open("locale/foreman.pot") {|f| f.grep /(%s.*%s|#\{)/}
+    errors = File.open("locale/#{DOMAIN}.pot") {|f| f.grep /(%s.*%s|#\{)/}
     if errors.count > 0
       errors.each {|e| puts "MALFORMED: #{e}"}
       puts "Malformed strings found: #{errors.count}"
       puts "Please read http://projects.theforeman.org/projects/foreman/wiki/Translating"
     end
   end
+
+  desc 'Alias for gettext:po_to_json'
+  task :po_to_json => Dir['locale/*/foreman.po'].push("gettext:po_to_json")
 
   desc 'Alias for gettext:pack'
   task :pack => "gettext:pack"

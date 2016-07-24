@@ -1,6 +1,11 @@
 class UsergroupsController < ApplicationController
+  include Foreman::Controller::AutoCompleteSearch
+  before_action :find_resource, :only => [:edit, :update, :destroy]
+  before_action :get_external_usergroups_to_refresh, :only => [:update]
+  after_action  :refresh_external_usergroups, :only => [:create, :update]
+
   def index
-    @usergroups = Usergroup.paginate :page => params[:page]
+    @usergroups = resource_base.includes(:usergroups).search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
   end
 
   def new
@@ -17,24 +22,43 @@ class UsergroupsController < ApplicationController
   end
 
   def edit
-    @usergroup = Usergroup.find(params[:id])
   end
 
   def update
-    @usergroup = Usergroup.find(params[:id])
     if @usergroup.update_attributes(params[:usergroup])
       process_success
     else
       process_error
     end
+  rescue Foreman::CyclicGraphException => e
+    @usergroup.errors[:usergroups] = e.record.errors[:base].join(' ')
+    process_error
   end
 
   def destroy
-    @usergroup = Usergroup.find(params[:id])
     if @usergroup.destroy
       process_success
     else
       process_error
     end
+  end
+
+  private
+
+  def find_by_id(permission = :view_usergroups)
+    Usergroup.authorized(permission).find(params[:id])
+  end
+
+  def get_external_usergroups_to_refresh
+    # we need to load current status, so we call all explicitly
+    @external_usergroups = @usergroup.external_usergroups.to_a
+  end
+
+  def external_usergroups
+    @external_usergroups || []
+  end
+
+  def refresh_external_usergroups
+    (external_usergroups + @usergroup.external_usergroups).uniq.map(&:refresh)
   end
 end

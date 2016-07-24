@@ -1,8 +1,8 @@
 module Api
   module V1
     class AuditsController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :setup_search_options, :only => :index
+      before_action :find_resource, :only => %w{show update destroy}
+      before_action :setup_search_options, :only => :index
 
       api :GET, "/audits/", "List all audits."
       api :GET, "/hosts/:host_id/audits/", "List all audits for a given host."
@@ -12,7 +12,7 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        Audit.unscoped { @audits = Audit.search_for(*search_options).paginate(paginate_options) }
+        Audit.unscoped { @audits = Audit.authorized(:view_audit_logs).search_for(*search_options).paginate(paginate_options) }
       end
 
       api :GET, "/audits/:id/", "Show an audit"
@@ -20,7 +20,6 @@ module Api
 
       def show
       end
-
     end
   end
 end

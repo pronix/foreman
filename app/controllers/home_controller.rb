@@ -1,7 +1,7 @@
 class HomeController < ApplicationController
-  skip_before_filter :require_login, :only => [:status]
-  skip_before_filter :authorize, :set_taxonomy, :only => [:status]
-  skip_before_filter :session_expiry, :update_activity_time, :only => :status
+  skip_before_action :require_login, :only => [:status]
+  skip_before_action :authorize, :set_taxonomy, :only => [:status]
+  skip_before_action :session_expiry, :update_activity_time, :only => :status
 
   def settings
   end
@@ -18,20 +18,22 @@ class HomeController < ApplicationController
   end
 
   private
+
   # check for exception - set the result code and duration time
-  def exception_watch &block
-    start = Time.now
+  def exception_watch(&block)
+    start = Time.now.utc
     result = {}
-    yield
-    result[:result] = 'ok'
-    result[:status] = 200
-    result[:version] = SETTINGS[:version].full
-    result[:db_duration_ms] = ((Time.now - start) * 1000).round.to_s
-  rescue Exception => e
-    result[:result] = 'fail'
-    result[:status] = 500
-    result[:message] = e.message
-  ensure
-    return result
+    begin
+      yield
+      result[:result] = 'ok'
+      result[:status] = :ok
+      result[:version] = SETTINGS[:version].full
+      result[:db_duration_ms] = ((Time.now.utc - start) * 1000).round.to_s
+    rescue => e
+      result[:result] = 'fail'
+      result[:status] = :internal_server_error
+      result[:message] = e.message
+    end
+    result
   end
 end

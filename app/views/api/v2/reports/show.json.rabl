@@ -2,16 +2,16 @@ object @report
 
 extends "api/v2/reports/main"
 
-child :logs, :object_root => false do
-  child :source, :object_root => false do
+child :logs do
+  child :source do
     attribute :value => :source
   end
-  child :message, :object_root => false do
+  child :message do
     attribute :value => :message
   end
   attribute :level
 end
 
 node :summary do |report|
-  report.summaryStatus
+  report.summary_status
 end

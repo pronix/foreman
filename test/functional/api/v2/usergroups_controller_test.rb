@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::UsergroupsControllerTest < ActionController::TestCase
-
   def setup
     as_admin { @usergroup = FactoryGirl.create(:usergroup) }
   end
@@ -27,11 +26,11 @@ class Api::V2::UsergroupsControllerTest < ActionController::TestCase
     assert_difference('Usergroup.count') do
       post :create, { :usergroup => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update usergroup" do
-    put :update, { :id => @usergroup.to_param, :usergroup => { } }
+    put :update, { :id => @usergroup.to_param, :usergroup => valid_attrs }
     assert_response :success
   end
 
@@ -41,5 +40,4 @@ class Api::V2::UsergroupsControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

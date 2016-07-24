@@ -1,4 +1,3 @@
 group :fog do
- gem 'fog', '~> 1.18.0'
- gem 'unf'
+  gem 'fog', '1.38.0', :require => false
 end

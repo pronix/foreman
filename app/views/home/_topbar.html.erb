@@ -1,27 +1,48 @@
-<!-- .btn-navbar is used as the toggle for collapsed navbar content -->
-<a class="btn btn-navbar" data-toggle="collapse" data-target=".nav1">
-  <span class="icon-bar"></span>
-  <span class="icon-bar"></span>
-  <span class="icon-bar"></span>
-</a>
-<a class="btn btn-navbar" style="padding: 5px 11px 2px 11px;" data-toggle="collapse" data-target=".nav2">
-  <span class="icon-cog icon-white"></span>
-</a>
-<!-- menu -->
-<%= content_tag :div,nil, :id=>'current_tab', :data=>{:controller=>controller_name, :action=>action_name} %>
-
-<% if User.current %>
-  <% cache(TopbarSweeper.fragment_name) do %>
-    <div class="nav-collapse collapse nav1">
-      <ul class="nav" id="menu">
-        <%= render "home/org_switcher" %>
-        <%=  render_menu :top_menu %>
-      </ul>
+<div class="navbar navbar-default navbar-outer">
+  <div class="navbar-header">
+    <div class="container">
+      <div class="navbar-brand">
+        <!--[if IE]><div class='logo-small'> <![endif]-->
+        <%= image_tag("header_logo.png") %>
+        <!--[if IE]></div> <![endif]-->
+        <%= link_to "Foreman", main_app.root_path %>
+      </div>
+      <div id="turbolinks-progress"><div class="spinner spinner-inverse"></div></div>
+      <% if User.current %>
+        <div>
+          <ul class="nav navbar-nav navbar-right navbar-header-menu navbar-collapse collapse" id="menu4">
+            <%= render_menu :header_menu %>
+            <%= render 'home/user_dropdown' if SETTINGS[:login] %>
+          </ul>
+        </div>
+      <% end %>
     </div>
-    <div class="nav-collapse collapse nav2">
-      <ul class="nav pull-right" id="menu2">
-        <%=  render_menu :admin_menu %>
-      </ul>
-    </div>
-  <% end %>
-<% end %>
+  </div>
+</div>
+<div class="navbar navbar-default navbar-inner navbar-fixed-top persist-header">
+  <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-header-menu">
+    <span class="glyphicon glyphicon-user"></span>
+  </button>
+  <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-menu">
+    <span class="icon-bar"></span>
+    <span class="icon-bar"></span>
+    <span class="icon-bar"></span>
+  </button>
+  <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-admin">
+    <span class="glyphicon glyphicon-cog"></span>
+  </button>
+  <div class="container">
+    <!-- menu -->
+    <% if User.current %>
+      <% cache(TopbarSweeper.fragment_name, :skip_digest => true) do %>
+        <ul class="nav navbar-nav navbar-menu navbar-collapse collapse" id="menu">
+          <%= render "home/org_switcher" %>
+          <%= render_menu :top_menu %>
+        </ul>
+        <ul class="nav navbar-nav navbar-admin navbar-right navbar-collapse collapse" id="menu2">
+          <%= render_menu :admin_menu %>
+        </ul>
+      <% end %>
+    <% end %>
+  </div>
+</div>

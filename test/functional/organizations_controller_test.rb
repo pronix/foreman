@@ -8,9 +8,26 @@ class OrganizationsControllerTest < ActionController::TestCase
 
   test "should get edit" do
     organization = Organization.new :name => "organization1"
-    assert organization.save!
-    get :edit, {:id => organization}, set_session_user
+    as_admin do
+      assert organization.save!
+      get :edit, {:id => organization}, set_session_user
+    end
     assert_response :success
+  end
+
+  test "index respects taxonomies" do
+    org1 = FactoryGirl.create(:organization)
+    org2 = FactoryGirl.create(:organization)
+    user = FactoryGirl.create(:user, :mail => 'a@b.c')
+    user.organizations = [ org1 ]
+    filter = FactoryGirl.create(:filter, :permissions => [ Permission.find_by_name(:view_organizations) ])
+    user.roles << filter.role
+    as_user user do
+      get :index, { }, set_session_user.merge(:user => User.current.id)
+      assert_response :success
+      assert_includes assigns(:taxonomies), org1
+      refute_includes assigns(:taxonomies), org2
+    end
   end
 
   test "should update organization" do
@@ -26,31 +43,52 @@ class OrganizationsControllerTest < ActionController::TestCase
   test "should not allow saving another organization with same name" do
     name = "organization_dup_name"
     organization = Organization.new :name => name
-    assert organization.save!
+    as_admin do
+      assert organization.save!
+      put :create, {:commit => "Submit", :organization => {:name => name} }, set_session_user
+    end
 
-    put :create, {:commit => "Submit", :organization => {:name => name} }, set_session_user
     assert @response.body.include? "has already been taken"
   end
 
   test "should delete null organization" do
     name = "organization1"
     organization = Organization.new :name => name
-    assert organization.save!
+    as_admin do
+      assert organization.save!
 
-    assert_difference('Organization.count', -1) do
-      delete :destroy, {:id => organization}, set_session_user
-      assert_match /Successfully deleted/, flash[:notice]
+      assert_difference('Organization.count', -1) do
+        delete :destroy, {:id => organization}, set_session_user
+        assert_match /Successfully deleted/, flash[:notice]
+      end
     end
   end
 
   test "should clear the session if the user deleted their current organization" do
-    organization = Organization.create!(:name => "random-house")
-    Organization.current = organization
+    as_admin do
+      organization = Organization.create!(:name => "random-house")
+      Organization.current = organization
 
-    delete :destroy, {:id => organization.id}, set_session_user.merge(:organization_id => organization.id)
+      delete :destroy, {:id => organization.id}, set_session_user.merge(:organization_id => organization.id)
+    end
 
     assert_equal Organization.current, nil
     assert_equal session[:organization_id], nil
+  end
+
+  test "should save organization on session expiry" do
+    # login and select an org
+    get :index, {}, set_session_user
+    session[:organization_id] = taxonomies(:organization1).id
+
+    # session is expired, but try to load a page
+    session[:expires_at] = 5.minutes.ago.to_i
+    get :index
+
+    # session is reset, redirected to login, but org id remains
+    assert_redirected_to "/users/login"
+    assert_match /Your session has expired, please login again/, flash[:warning]
+    assert_equal session[:organization_id], taxonomies(:organization1).id
   end
 
   test "should display a warning if current organization has been deleted" do
@@ -71,7 +109,11 @@ class OrganizationsControllerTest < ActionController::TestCase
 
   test "should assign all hosts with no organization to selected organization and add taxable_taxonomies" do
     organization = taxonomies(:organization1)
-    assert_difference "organization.taxable_taxonomies.count", 15 do
+    domain = FactoryGirl.create(:domain, :organizations => [taxonomies(:organization2)])
+    FactoryGirl.create_list(:host, 2, :domain => domain,
+                            :environment => environments(:production),
+                            :organization => nil)
+    assert_difference "organization.taxable_taxonomies.count", 1 do
       post :assign_all_hosts, {:id => organization.id}, set_session_user
     end
   end
@@ -84,12 +126,13 @@ class OrganizationsControllerTest < ActionController::TestCase
   end
   test "assigned selected hosts with no organization to selected organization" do
     organization = taxonomies(:organization1)
-    selected_hosts_no_organization_ids = Host.where(:organization_id => nil).limit(2).map(&:id)
+    hosts = FactoryGirl.create_list(:host, 2, :organization => nil)
+    selected_hosts_no_organization_ids = hosts.map(&:id)
 
     assert_difference "organization.hosts.count", 2 do
       put :assign_selected_hosts, {:id => organization.id,
                                    :organization => {:host_ids => selected_hosts_no_organization_ids}
-                                  }, set_session_user
+      }, set_session_user
     end
     assert_redirected_to :controller => :organizations, :action => :index
     assert_equal flash[:notice], "Selected hosts are now assigned to Organization 1"
@@ -97,6 +140,7 @@ class OrganizationsControllerTest < ActionController::TestCase
 
   # Mismatches
   test "should show all mismatches and button Fix All Mismatches if there are" do
+    FactoryGirl.create_list(:host, 2, :with_environment, :organization => taxonomies(:organization1))
     TaxableTaxonomy.delete_all
     get :mismatches, {}, set_session_user
     assert_response :success
@@ -121,37 +165,38 @@ class OrganizationsControllerTest < ActionController::TestCase
   end
   test "should clone organization with assocations" do
     organization = taxonomies(:organization1)
+    FactoryGirl.create(:host, :organization => nil)
     organization_dup = organization.clone
 
     assert_difference "Organization.count", 1 do
       post :create, {:organization => {:name => "organization_dup_name",
-                                 :environment_ids => organization_dup.environment_ids,
-                                 :hostgroup_ids => organization_dup.hostgroup_ids,
-                                 :subnet_ids => organization_dup.hostgroup_ids,
-                                 :domain_ids => organization_dup.domain_ids,
-                                 :medium_ids => organization_dup.medium_ids,
-                                 :user_ids => organization_dup.user_ids,
-                                 :smart_proxy_ids => organization_dup.smart_proxy_ids,
-                                 :config_template_ids => organization_dup.config_template_ids,
-                                 :compute_resource_ids => organization_dup.compute_resource_ids,
-                                 :location_ids => organization_dup.location_ids
-                               }
-                   }, set_session_user
+                                       :environment_ids => organization_dup.environment_ids,
+                                       :hostgroup_ids => organization_dup.hostgroup_ids,
+                                       :subnet_ids => organization_dup.hostgroup_ids,
+                                       :domain_ids => organization_dup.domain_ids,
+                                       :medium_ids => organization_dup.medium_ids,
+                                       :user_ids => organization_dup.user_ids,
+                                       :smart_proxy_ids => organization_dup.smart_proxy_ids,
+                                       :provisioning_template_ids => organization_dup.provisioning_template_ids,
+                                       :compute_resource_ids => organization_dup.compute_resource_ids,
+                                       :location_ids => organization_dup.location_ids
+      }
+      }, set_session_user
     end
 
-    new_organization = Organization.order(:id).last
-    assert_redirected_to :controller => :organizations, :action => :step2, :id => new_organization.id
+    new_organization = Organization.unscoped.order(:id).last
+    assert_redirected_to :controller => :organizations, :action => :step2, :id => new_organization.to_param
 
-    assert_equal new_organization.environment_ids, organization.environment_ids
-    assert_equal new_organization.hostgroup_ids, organization.hostgroup_ids
-    assert_equal new_organization.environment_ids, organization.environment_ids
-    assert_equal new_organization.domain_ids, organization.domain_ids
-    assert_equal new_organization.medium_ids, organization.medium_ids
-    assert_equal new_organization.user_ids, organization.user_ids
-    assert_equal new_organization.smart_proxy_ids, organization.smart_proxy_ids
-    assert_equal new_organization.config_template_ids, organization.config_template_ids
-    assert_equal new_organization.compute_resource_ids, organization.compute_resource_ids
-    assert_equal new_organization.location_ids, organization.location_ids
+    assert_equal new_organization.environment_ids.sort, organization.environment_ids.sort
+    assert_equal new_organization.hostgroup_ids.sort, organization.hostgroup_ids.sort
+    assert_equal new_organization.environment_ids.sort, organization.environment_ids.sort
+    assert_equal new_organization.domain_ids.sort, organization.domain_ids.sort
+    assert_equal new_organization.medium_ids.sort, organization.medium_ids.sort
+    assert_equal new_organization.user_ids.sort, organization.user_ids.sort
+    assert_equal new_organization.smart_proxy_ids.sort, organization.smart_proxy_ids.sort
+    assert_equal new_organization.provisioning_template_ids.sort, organization.provisioning_template_ids.sort
+    assert_equal new_organization.compute_resource_ids.sort, organization.compute_resource_ids.sort
+    assert_equal new_organization.location_ids.sort, organization.location_ids.sort
   end
 
   test "should clear out Organization.current" do
@@ -160,5 +205,62 @@ class OrganizationsControllerTest < ActionController::TestCase
     assert_equal Organization.current, nil
     assert_equal session[:organization_id], nil
     assert_redirected_to root_url
+  end
+
+  test "changes should expire topbar cache" do
+    user1 = FactoryGirl.create(:user, :with_mail)
+    user2 = FactoryGirl.create(:user, :with_mail)
+    organization = as_admin { FactoryGirl.create(:organization, :users => [user1, user2]) }
+
+    User.any_instance.expects(:expire_topbar_cache).times(2+User.only_admin.count) #2 users, all admins
+    put :update, { :id => organization.id, :organization => {:name => "Topbar Org" }}, set_session_user
+  end
+
+  test 'user with view_params rights should see parameters in an os' do
+    setup_user "edit", "organizations"
+    setup_user "view", "params"
+    organization = FactoryGirl.create(:organization, :with_parameter)
+    get :edit, {:id => organization.id}, set_session_user.merge(:user => users(:one).id)
+    assert_not_nil response.body['Parameter']
+  end
+
+  test 'user without view_params rights should not see parameters in an os' do
+    setup_user "edit", "organizations"
+    organization = FactoryGirl.create(:organization, :with_parameter)
+    get :edit, {:id => organization.id}, set_session_user.merge(:user => users(:one).id)
+    assert_nil response.body['Parameter']
+  end
+
+  context 'wizard' do
+    test 'redirects to step 2 if unassigned hosts exist' do
+      host = FactoryGirl.create(:host)
+      host.update_attributes(:organization => nil)
+
+      organization = FactoryGirl.create(:organization)
+      Organization.stubs(:current).returns(organization)
+
+      post :create, {:organization => {:name => "test_org"} }, set_session_user
+
+      assert_redirected_to /step2/
+      Organization.unstub(:current)
+    end
+
+    test 'redirects to step 3 if no unassigned hosts exist' do
+      post :create, {:organization => {:name => "test_org"} }, set_session_user
+
+      assert_redirected_to /edit/
+    end
+
+    test 'redirects to step 3 if no permissins for hosts' do
+      host = FactoryGirl.create(:host)
+      host.update_attributes(:organization => nil)
+
+      Host.stubs(:authorized).returns(Host.where('1=0'))
+
+      post :create, {:organization => {:name => "test_org"} }, set_session_user
+
+      assert_redirected_to /edit/
+      Host.unstub(:authorized)
+    end
   end
 end

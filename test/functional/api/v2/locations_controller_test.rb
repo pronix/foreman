@@ -1,14 +1,10 @@
 require 'test_helper'
 
 class Api::V2::LocationsControllerTest < ActionController::TestCase
-
   def setup
-#    TODO was 500 since there is not include Authorization in taxonomy.rb
     @location = taxonomies(:location1)
     @location.organization_ids = [taxonomies(:organization1).id]
-    Rabl.configuration.use_controller_name_as_json_root = false
   end
-
 
   test "should get index" do
     get :index, { }
@@ -17,18 +13,27 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
   end
 
   test "should show location" do
-    get :show, { :id => Location.first.to_param }
+    get :show, { :id => taxonomies(:location1).to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
     assert !show_response.empty?
-    #assert *_ids are included in response. Test just for domain_ids
-    assert show_response.any? {|k,v| k == "domain_ids" }
+    #assert child nodes are included in response'
+    NODES = ["users", "smart_proxies", "subnets", "compute_resources", "media", "config_templates",
+             "provisioning_templates", "domains", "ptables", "realms", "environments", "hostgroups",
+             "organizations", "parameters"].sort
+    NODES.each do |node|
+      assert show_response.keys.include?(node), "'#{node}' child node should be in response but was not"
+    end
   end
 
   test "should not create invalid location" do
     post :create, { :location => { :name => "" } }
-#    TODO was 500 since there is not include Authorization in taxonomy.rb
-#    assert_response :unprocessable_entity
+    assert_response :unprocessable_entity
+  end
+
+  test "should return an error for no params" do
+    post :create
+    assert_response :unprocessable_entity
   end
 
   test "should create valid location" do
@@ -38,8 +43,17 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
     assert !show_response.empty?
   end
 
+  test "should create location with parent" do
+    parent_id = Location.first.id
+    post :create, { :location => { :name => "Test Location", :parent_id =>  parent_id } }
+    assert_response :success
+    show_response = ActiveSupport::JSON.decode(@response.body)
+    assert !show_response.empty?
+    assert_equal parent_id, show_response['parent_id']
+  end
+
   test "should update location on if valid is location" do
-    ignore_types = ["Domain", "Hostgroup", "Environment", "User", "Medium", "Subnet", "SmartProxy", "ConfigTemplate", "ComputeResource"]
+    ignore_types = ["Domain", "Hostgroup", "Environment", "User", "Medium", "Subnet", "SmartProxy", "ProvisioningTemplate", "ComputeResource", "Realm"]
     put :update, { :id => @location.to_param, :location => { :name => "New Location", :ignore_types => ignore_types } }
     assert_equal "New Location", Location.find(@location.id).name
     assert_response :success
@@ -47,8 +61,7 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
 
   test "should not update invalid location" do
     put :update, { :id => Location.first.to_param, :location => { :name => "" } }
-#    TODO was 500 since there is not include Authorization
-#    assert_response :unprocessable_entity
+    assert_response :unprocessable_entity
   end
 
   test "should destroy location if hosts do not use it" do
@@ -58,20 +71,36 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
     assert_response :success
   end
 
-  test "should NOT destroy location if hosts use it" do
-    assert_difference('Location.count', 0) do
+  test "should delete taxonomies if it's one of user's" do
+    loc1 = FactoryGirl.create(:location)
+    loc2 = FactoryGirl.create(:location)
+    user = FactoryGirl.create(:user)
+    user.locations = [ loc1 ]
+    filter = FactoryGirl.create(:filter, :permissions => [ Permission.find_by_name(:destroy_locations) ])
+    user.roles << filter.role
+    as_user user do
+      delete :destroy, { :id => loc2 }
+      assert_response :not_found
+    end
+  end
+
+  test "should dissociate hosts from the destroyed location" do
+    host = FactoryGirl.create(:host, :location => taxonomies(:location1))
+    assert_difference('Location.count', -1) do
       delete :destroy, { :id => taxonomies(:location1).to_param }
     end
-#    TODO was 500 since there is not include Authorization in taxonomy.rb
-#    assert_response :unprocessable_entity
+    assert_response :success
+    assert_nil Host::Managed.find(host.id).location
   end
 
   test "should update *_ids. test for domain_ids" do
     # ignore all but Domain
-    @location.ignore_types = ["Hostgroup", "Environment", "User", "Medium", "Subnet", "SmartProxy", "ConfigTemplate", "ComputeResource"]
-    @location.save(:validate => false)
-    assert_difference('@location.domains.count', 4) do
-      put :update, { :id => @location.to_param, :location => { :domain_ids => Domain.pluck(:id) } }
+    @location.ignore_types = ["Hostgroup", "Environment", "User", "Medium", "Subnet", "SmartProxy", "ProvisioningTemplate", "ComputeResource", "Realm"]
+    as_admin do
+      @location.save(:validate => false)
+      assert_difference('@location.domains.count', 2) do
+        put :update, { :id => @location.to_param, :location => { :domain_ids => Domain.pluck(:id) } }
+      end
     end
     assert_response :success
   end
@@ -89,25 +118,34 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
   test "root name on index should be results by default" do
     get :index, {}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
-    assert response['results'].kind_of?(Array)
+    assert response.is_a?(Hash)
+    assert response['results'].is_a?(Array)
     refute response['locations']
   end
 
-  test "root name on index is configured to be controller name" do
-    Rabl.configuration.use_controller_name_as_json_root = true
-    get :index, {}
-    response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
-    refute response['results']
-    assert response['locations'].kind_of?(Array)
+  context "use_controller_name_as_json_root is enabled" do
+    setup do
+      Rabl.configuration.use_controller_name_as_json_root = true
+    end
+
+    teardown do
+      Rabl.configuration.use_controller_name_as_json_root = false
+    end
+
+    test "root name on index is configured to be controller name" do
+      get :index, {}
+      response = ActiveSupport::JSON.decode(@response.body)
+      assert response.is_a?(Hash)
+      refute response['results']
+      assert response['locations'].is_a?(Array)
+    end
   end
 
   test "root name on index can be overwritten by param root_name" do
     get :index, {:root_name => "data"}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
-    assert response['data'].kind_of?(Array)
+    assert response.is_a?(Hash)
+    assert response['data'].is_a?(Array)
     refute response['results']
     refute response['locations']
   end
@@ -115,19 +153,19 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
   test "on index no object_root name for each element in array" do
     get :index, {}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
-    assert response['results'].kind_of?(Array)
-    assert_equal ['created_at', 'id', 'name', 'updated_at'], response['results'][0].keys.sort
+    assert response.is_a?(Hash)
+    assert response['results'].is_a?(Array)
+    assert_equal ['ancestry', 'created_at', 'description', 'id', 'name', 'parent_id', 'parent_name', 'title', 'updated_at'], response['results'][0].keys.sort
   end
 
   test "object name on show defaults to object class name" do
     obj = taxonomies(:location1)
     get :show, {:id => obj.id}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
+    assert response.is_a?(Hash)
     klass_name = obj.class.name.downcase
     assert "location", klass_name
-    assert response.kind_of?(Hash)
+    assert response.is_a?(Hash)
     assert_equal obj.id, response["id"]
   end
 
@@ -135,8 +173,8 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
     obj = taxonomies(:location1)
     get :show, {:id => obj.id, :root_name => 'row'}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
-    assert response['row'].kind_of?(Hash)
+    assert response.is_a?(Hash)
+    assert response['row'].is_a?(Hash)
     assert_equal obj.id, response['row']["id"]
   end
 
@@ -144,7 +182,7 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
     obj = taxonomies(:location1)
     get :show, {:id => obj.id, :root_name => 'false'}
     response = ActiveSupport::JSON.decode(@response.body)
-    assert response.kind_of?(Hash)
+    assert response.is_a?(Hash)
     assert_equal obj.id, response["id"]
   end
 
@@ -157,74 +195,97 @@ class Api::V2::LocationsControllerTest < ActionController::TestCase
   end
 
   test "should return correct metadata if no params passed" do
-    add_locations
-    get :index, { }
+    as_admin do
+      add_locations
+      get :index, { }
+    end
+
     assert_response :success
+
     response = ActiveSupport::JSON.decode(@response.body)
-    # 2 fixtures + 26 letters = 28
-    assert_equal 28, response['total']
-    assert_equal 28, response['subtotal']
-    assert_equal  1, response['page']
-    assert_equal 20, response['per_page']
-    assert_equal nil, response['search']
-    assert_equal nil, response['sort']['by']
-    assert_equal nil, response['sort']['order']
+    expected_metadata = { 'total'    => 28, 'subtotal' => 28, 'page' => 1,
+                          'per_page' => 20, 'search'   => nil,
+                          'sort' => { 'by' => nil, 'order' => nil } }
+
+    assert_equal expected_metadata, response.except('results')
   end
 
   test "should return correct metadata if page param is passed" do
-    add_locations
-    get :index, {:page => 2 }
+    as_admin do
+      add_locations
+      get :index, {:page => 2 }
+    end
+
     assert_response :success
+
     response = ActiveSupport::JSON.decode(@response.body)
-    assert_equal 28, response['total']
-    assert_equal 28, response['subtotal']
-    assert_equal  2, response['page']
-    assert_equal 20, response['per_page']
-    assert_equal nil, response['search']
-    assert_equal nil, response['sort']['by']
-    assert_equal nil, response['sort']['order']
+    expected_metadata = { 'total'    => 28, 'subtotal' => 28, 'page' => 2,
+                          'per_page' => 20, 'search'   => nil,
+                          'sort' => { 'by' => nil, 'order' => nil } }
+
+    assert_equal expected_metadata, response.except('results')
   end
 
   test "should return correct metadata if per_page param is passed" do
-    add_locations
-    get :index, {:per_page => 10 }
+    as_admin do
+      add_locations
+      get :index, {:per_page => 10 }
+    end
+
     assert_response :success
+
     response = ActiveSupport::JSON.decode(@response.body)
-    assert_equal 28, response['total']
-    assert_equal 28, response['subtotal']
-    assert_equal  1, response['page']
-    assert_equal 10, response['per_page']
-    assert_equal nil, response['search']
-    assert_equal nil, response['sort']['by']
-    assert_equal nil, response['sort']['order']
+    expected_metadata = { 'total'    => 28, 'subtotal' => 28, 'page' => 1,
+                          'per_page' => 10, 'search'   => nil,
+                          'sort' => { 'by' => nil, 'order' => nil } }
+
+    assert_equal expected_metadata, response.except('results')
   end
 
   test "should return correct metadata if search param is passed" do
-    add_locations
-    get :index, {:search => 'Loc' }
+    as_admin do
+      add_locations
+      get :index, {:search => 'Loc' }
+    end
+
     assert_response :success
+
     response = ActiveSupport::JSON.decode(@response.body)
-    assert_equal 28, response['total']
-    assert_equal  2, response['subtotal']
-    assert_equal  1, response['page']
-    assert_equal 20, response['per_page']
-    assert_equal 'Loc', response['search']
-    assert_equal nil, response['sort']['by']
-    assert_equal nil, response['sort']['order']
+    expected_metadata = { 'total'    => 28, 'subtotal' => 2, 'page' => 1,
+                          'per_page' => 20, 'search'   => 'Loc',
+                          'sort' => { 'by' => nil, 'order' => nil } }
+
+    assert_equal expected_metadata, response.except('results')
   end
 
   test "should return correct metadata if order param is passed" do
-    add_locations
-    get :index, {:order => 'name DESC' }
+    as_admin do
+      add_locations
+      get :index, {:order => 'title DESC' }
+    end
+
     assert_response :success
+
     response = ActiveSupport::JSON.decode(@response.body)
-    assert_equal 28, response['total']
-    assert_equal 28, response['subtotal']
-    assert_equal  1, response['page']
-    assert_equal 20, response['per_page']
-    assert_equal nil, response['search']
-    assert_equal 'name', response['sort']['by']
-    assert_equal 'DESC', response['sort']['order']
+    expected_metadata = { 'total'    => 28, 'subtotal' => 28, 'page' => 1,
+                          'per_page' => 20, 'search'   => nil,
+                          'sort' => { 'by' => 'title', 'order' => 'DESC' } }
+
+    assert_equal expected_metadata, response.except('results')
   end
 
+  test "user without view_params permission can't see location parameters" do
+    setup_user "view", "locations"
+    location_with_parameter = FactoryGirl.create(:location, :with_parameter)
+    get :show, {:id => location_with_parameter.to_param, :format => 'json'}
+    assert_empty JSON.parse(response.body)['parameters']
+  end
+
+  test "user with view_params permission can see location parameters" do
+    setup_user "view", "locations"
+    setup_user "view", "params"
+    location_with_parameter = FactoryGirl.create(:location, :with_parameter)
+    get :show, {:id => location_with_parameter.to_param, :format => 'json'}
+    assert_not_empty JSON.parse(response.body)['parameters']
+  end
 end

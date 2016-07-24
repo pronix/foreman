@@ -1,7 +1,6 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class AboutTest < ActionDispatch::IntegrationTest
-
+class AboutIntegrationTest < ActionDispatch::IntegrationTest
   test "about page" do
     visit about_index_path
     assert_index_page(about_index_path,"About", nil, false, false)
@@ -18,4 +17,8 @@ class AboutTest < ActionDispatch::IntegrationTest
     assert page.has_content?("Version")
   end
 
+  test "about page proxies should have version" do
+    visit about_index_path
+    assert page.has_selector?('th', :text => "Version")
+  end
 end

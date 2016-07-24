@@ -9,7 +9,7 @@ module Foreman
       path += ENV['PATH'].split(File::PATH_SEPARATOR)
       path.flatten.uniq.each do |dir|
         dest = File.join(dir, bin)
-        return dest if FileTest.file? dest and FileTest.executable? dest
+        return dest if FileTest.file?(dest) && FileTest.executable?(dest)
       end
       return false
     rescue StandardError => e
@@ -26,6 +26,5 @@ module Foreman
     def secure_encryption_key
       SecureRandom.hex(20)
     end
-
   end
 end

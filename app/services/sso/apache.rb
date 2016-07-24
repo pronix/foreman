@@ -3,10 +3,16 @@ module SSO
     delegate :session, :to => :controller
 
     CAS_USERNAME = 'REMOTE_USER'
+    ENV_TO_ATTR_MAPPING = {
+      'REMOTE_USER_EMAIL'     => :mail,
+      'REMOTE_USER_FIRSTNAME' => :firstname,
+      'REMOTE_USER_LASTNAME'  => :lastname
+    }
+
     def available?
       return false unless Setting['authorize_login_delegation']
-      return false if controller.api_request? and not Setting['authorize_login_delegation_api']
-      return false if controller.api_request? and not request.env[CAS_USERNAME].present?
+      return false if controller.api_request? && !(Setting['authorize_login_delegation_api'])
+      return false if controller.api_request? && !request.env[CAS_USERNAME].present?
       true
     end
 
@@ -22,7 +28,14 @@ module SSO
     # authenticate the user without using password.
     def authenticated?
       return false unless (self.user = request.env[CAS_USERNAME])
-      return false unless User.find_or_create_external_user(self.user, Setting['authorize_login_delegation_auth_source_user_autocreate'])
+      attrs = { :login => self.user }.merge(additional_attributes)
+      group_count = request.env['REMOTE_USER_GROUP_N'].to_i
+      if group_count > 0
+        attrs[:groups] = []
+        group_count.times { |i| attrs[:groups]<< request.env["REMOTE_USER_GROUP_#{i+1}"] }
+      end
+
+      return false unless User.find_or_create_external_user(attrs, Setting['authorize_login_delegation_auth_source_user_autocreate'])
       store
       true
     end
@@ -33,11 +46,11 @@ module SSO
 
     def authenticate!
       self.has_rendered = true
-      controller.redirect_to controller.extlogin_users_path
+      controller.redirect_to controller.main_app.extlogin_users_path
     end
 
     def login_url
-      controller.extlogin_users_path
+      controller.main_app.extlogin_users_path
     end
 
     def logout_url
@@ -45,14 +58,35 @@ module SSO
     end
 
     def expiration_url
-      controller.extlogin_users_path
+      controller.main_app.extlogin_users_path
     end
 
     private
 
+    def additional_attributes
+      attrs = {}
+      ENV_TO_ATTR_MAPPING.each do |header, attribute|
+        if request.env.has_key?(header)
+          attrs[attribute] = convert_encoding(request.env[header].dup)
+        end
+      end
+      attrs
+    end
+
+    def convert_encoding(value)
+      if value.respond_to?(:force_encoding)
+        value.force_encoding(Encoding::UTF_8)
+        if !value.valid_encoding?
+          value.encode(Encoding::UTF_8, Encoding::ISO_8859_1, { :invalid => :replace, :replace => '-' }).force_encoding(Encoding::UTF_8)
+        end
+      else
+        Iconv.new('UTF-8//IGNORE', 'UTF-8').iconv(value) rescue value
+      end
+      value
+    end
+
     def store
       session[:sso_method] = self.class.to_s
     end
-
   end
 end

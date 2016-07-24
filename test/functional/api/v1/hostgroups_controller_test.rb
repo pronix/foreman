@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V1::HostgroupsControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => 'TestHostgroup' }
 
   test "should get index" do
@@ -27,15 +26,24 @@ class Api::V1::HostgroupsControllerTest < ActionController::TestCase
   end
 
   test "should update hostgroup" do
-    put :update, { :id => hostgroups(:common).to_param, :hostgroup => { } }
+    put :update, { :id => hostgroups(:common).to_param, :hostgroup => valid_attrs }
     assert_response :success
   end
 
   test "should destroy hostgroups" do
+    hostgroup = FactoryGirl.create(:hostgroup)
     assert_difference('Hostgroup.count', -1) do
-      delete :destroy, { :id => hostgroups(:common).to_param }
+      delete :destroy, :id => hostgroup
     end
     assert_response :success
+  end
+
+  test "blocks API deletion of hosts with children" do
+    assert hostgroups(:parent).has_children?
+    assert_no_difference('Hostgroup.count') do
+      delete :destroy, { :id => hostgroups(:parent).to_param }
+    end
+    assert_response :conflict
   end
 
   test "should create nested hostgroup with a parent" do
@@ -51,5 +59,4 @@ class Api::V1::HostgroupsControllerTest < ActionController::TestCase
     assert_response :success
     assert_equal hostgroups(:common).id.to_s, Hostgroup.find_by_name("db").ancestry
   end
-
 end

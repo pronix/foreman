@@ -1,6 +1,8 @@
 class AuthSourceLdapsController < ApplicationController
+  before_action :find_resource, :only => [:edit, :update, :destroy]
+
   def index
-    @auth_source_ldaps = AuthSourceLdap.all
+    @auth_source_ldaps = resource_base.all
   end
 
   def new
@@ -17,13 +19,9 @@ class AuthSourceLdapsController < ApplicationController
   end
 
   def edit
-    @auth_source_ldap = AuthSourceLdap.find(params[:id])
   end
 
   def update
-    @auth_source_ldap = AuthSourceLdap.find(params[:id])
-    # remove from hash :account_password if blank?
-    params[:auth_source_ldap].except!(:account_password) if params[:auth_source_ldap][:account_password].blank?
     if @auth_source_ldap.update_attributes(params[:auth_source_ldap])
       process_success
     else
@@ -32,12 +30,21 @@ class AuthSourceLdapsController < ApplicationController
   end
 
   def destroy
-    @auth_source_ldap = AuthSourceLdap.find(params[:id])
     if @auth_source_ldap.destroy
       process_success
     else
       process_error
     end
+  end
 
+  def test_connection
+    temp_auth_source_ldap = AuthSourceLdap.new(params[:auth_source_ldap])
+    begin
+      msg = temp_auth_source_ldap.test_connection
+    rescue Foreman::Exception => exception
+      Foreman::Logging.exception("Failed to connect to LDAP server", exception)
+      render :json => {:message => exception.message}, :status => :unprocessable_entity and return
+    end
+    render :json => msg, :status => :ok
   end
 end

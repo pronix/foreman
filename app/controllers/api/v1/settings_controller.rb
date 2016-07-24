@@ -1,8 +1,8 @@
 module Api
   module V1
     class SettingsController < V1::BaseController
-      before_filter :require_admin
-      before_filter :find_resource, :only => %w{show update}
+      before_action :require_admin
+      before_action :find_resource, :only => %w{show update}
 
       api :GET, "/settings/", "List all settings."
       param :search, String, :desc => "Filter results"
@@ -11,7 +11,7 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @settings = Setting.search_for(*search_options).paginate(paginate_options)
+        @settings = Setting.live_descendants.search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/settings/:id/", "Show an setting."
@@ -27,9 +27,8 @@ module Api
       end
 
       def update
-        process_response @setting.update_attributes(params[:setting])
+        process_response (@setting.parse_string_value(params[:setting][:value]) && @setting.save)
       end
-
     end
   end
 end

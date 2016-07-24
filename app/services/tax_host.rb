@@ -1,38 +1,32 @@
 class TaxHost
-
   FOREIGN_KEYS = [:location_id, :organization_id, :hostgroup_id,
                   :environment_id, :domain_id, :medium_id,
-                  :subnet_id, :compute_resource_id]
+                  :subnet_id, :compute_resource_id, :realm_id,
+                  :ptable_id]
 
   HASH_KEYS = [:location_ids, :organization_ids, :hostgroup_ids,
                :environment_ids, :domain_ids, :medium_ids,
                :subnet_ids, :compute_resource_ids,
-               :smart_proxy_ids, :user_ids, :config_template_ids]
+               :smart_proxy_ids, :user_ids, :provisioning_template_ids,
+               :realm_ids, :ptable_ids]
 
-  def initialize(taxonomy, hosts=nil)
+  def initialize(taxonomy, hosts = nil)
     @taxonomy = taxonomy
-    @hosts    = hosts.nil? ? @taxonomy.hosts : Host.where(:id => Array.wrap(hosts).map(&:id))
+    @hosts    = hosts.nil? ? @taxonomy.hosts.includes(:interfaces) : Host.where(:id => Array.wrap(hosts).map(&:id)).includes(:interfaces)
   end
 
   attr_reader :taxonomy, :hosts
 
   # returns a hash of HASH_KEYS used ids by hosts in a given taxonomy
   def used_ids
-    return @used_ids if @used_ids
-    ids         = HashWithIndifferentAccess.new
-    ids.default = []
-    hash_keys.each do |col|
-      ids[col] = self.send(col)
-    end
-    @used_ids = ids
+    @used_ids = default_ids_hash(true)
   end
 
   def selected_ids
     return @selected_ids if @selected_ids
-    ids         = HashWithIndifferentAccess.new
-    ids.default = []
+    ids = default_ids_hash
     #types NOT ignored - get ids that are selected
-    taxonomy.taxable_taxonomies.without(taxonomy.ignore_types).group_by { |d| d[:taxable_type] }.map do |k, v|
+    (taxonomy.taxable_taxonomies - taxonomy.ignore_types).group_by { |d| d[:taxable_type] }.map do |k, v|
       ids["#{k.tableize.singularize}_ids"] = v.map { |i| i[:taxable_id] }
     end
     #types that ARE ignored - get ALL ids for object
@@ -40,34 +34,54 @@ class TaxHost
       ids["#{taxonomy_type.tableize.singularize}_ids"] = taxonomy_type.constantize.pluck(:id)
     end
 
-    ids["#{opposite_taxonomy_type}_ids"] = taxonomy.send("#{opposite_taxonomy_type}_ids")
+    ids["#{opposite_taxonomy_type}_ids"] = Array(taxonomy.send("#{opposite_taxonomy_type}_ids"))
     @selected_ids                        = ids
   end
 
   def used_and_selected_ids
-    @used_and_selected_ids ||= Hash[hash_keys.map do |col|
+    @used_and_selected_ids ||= HashWithIndifferentAccess.new(Hash[hash_keys.map do |col|
       if taxonomy.ignore?(hash_key_to_class(col))
-        [col, used_ids[col] ] # used_ids only if ignore selected
+        [col, used_ids[col]] # used_ids only if ignore selected
       else
         [col, used_ids[col] & selected_ids[col]] # & operator to intersect COMMON elements of arrays
       end
-    end]
+    end])
+  end
+
+  def inherited_ids
+    return @inherited_ids if @inherited_ids
+    ids = default_ids_hash
+    taxonomy.ancestors.each do |t|
+      ids = union_deep_hashes(ids, t.selected_ids)
+    end
+    @inherited_ids = ids
+  end
+
+  def selected_or_inherited_ids
+    @selected_or_inherited_ids ||= union_deep_hashes(selected_ids, inherited_ids)
+  end
+
+  def used_and_selected_or_inherited_ids
+    @used_and_selected_or_inherited_ids ||= union_deep_hashes(used_and_selected_ids, inherited_ids)
+  end
+
+  def used_or_inherited_ids
+    @used_or_inherited_ids = union_deep_hashes(used_ids, inherited_ids)
   end
 
   def need_to_be_selected_ids
-    @need_to_be_selected_ids ||= Hash[hash_keys.map do |col|
+    @need_to_be_selected_ids ||= HashWithIndifferentAccess[hash_keys.map do |col|
       if taxonomy.ignore?(hash_key_to_class(col))
-        [col, [] ] # empty array since nothing needs to be selected
+        [col, []] # empty array since nothing needs to be selected
       else
-        [col, used_ids[col] - selected_ids[col]] # - operator find NON-common elements of arrays
+        [col, used_ids[col] - selected_or_inherited_ids[col]] # - operator find NON-common elements of arrays
       end
     end]
-
   end
 
   def missing_ids
     return @missing_ids if @missing_ids
-    missing_ids = Array.new
+    missing_ids = []
     need_to_be_selected_ids.each do |key, values|
       taxable_type = hash_key_to_class(key)
       values.each do |v|
@@ -93,7 +107,7 @@ class TaxHost
 
   def mismatches
     return @mismatches if @mismatches
-    mismatches = Array.new
+    mismatches = []
     need_to_be_selected_ids.each do |key, values|
       taxable_type = hash_key_to_class(key)
       values.each do |v|
@@ -112,15 +126,18 @@ class TaxHost
 
   def check_for_orphans
     found_orphan = false
-    error_msg = "The following must be selected since they belong to hosts:\n\n"
     need_to_be_selected_ids.each do |key, array_values|
       taxable_type = hash_key_to_class(key)
       unless array_values.empty?
         found_orphan = true
-        taxonomy.errors.add(taxable_type.tableize, _("You cannot remove %s that are used by hosts.") % taxable_type.tableize.humanize.downcase)
+        taxonomy.errors.add(taxable_type.tableize, _("you cannot remove %s that are used by hosts or inherited.") % taxable_type.tableize.humanize.downcase)
       end
     end
     !found_orphan
+  end
+
+  def non_inherited_ids(v1 = self.selected_ids, v2 = self.inherited_ids)
+    substract_deep_hashes(v1, v2)
   end
 
   private
@@ -130,23 +147,24 @@ class TaxHost
     #   return taxonomy.hosts.pluck(:domain_id)
     # end
     define_method "#{key}s".to_sym do
-      #TODO see if distinct pluck makes more sense
+      # can't use pluck(key), :domain_id is delegated method, not SQL column, performance diff wasn't big
       hosts.map(&key).uniq.compact
     end
   end
 
   # populate used_ids for 3 non-standard_id's
-  def user_ids(hosts = self.hosts)
-    #TODO: when migrating to rails 3.1+ switch to inner select on users.
-    User.unscoped.joins(:direct_hosts).where({ :hosts => { :id => hosts }, :users => { :admin => false } }).pluck('DISTINCT users.id')
+  def user_ids
+    @user_ids ||= User.unscoped.except_admin.
+      eager_load(:direct_hosts).where(:hosts => { :id => hosts.map(&:id) }).
+      pluck('DISTINCT users.id')
   end
 
-  def config_template_ids(hosts = self.hosts)
-    ConfigTemplate.template_ids_for(hosts)
+  def provisioning_template_ids
+    @provisioning_template_ids ||= ProvisioningTemplate.template_ids_for(hosts)
   end
 
-  def smart_proxy_ids(hosts = self.hosts)
-    SmartProxy.smart_proxy_ids_for(hosts)
+  def smart_proxy_ids
+    @smart_proxy_ids ||= SmartProxy.smart_proxy_ids_for(hosts)
   end
 
   # helpers
@@ -178,4 +196,25 @@ class TaxHost
     @need_to_be_selected_ids = @used_and_selected_ids = @used_ids = @selected_ids = @mismatches = @missing_ids = nil
   end
 
+  def union_deep_hashes(h1, h2)
+    h1.merge!(h2) {|k, v1, v2| v1.is_a?(Array) && v2.is_a?(Array) ? v1 | v2 : v1 }
+  end
+
+  def substract_deep_hashes(h1, h2)
+    h1.merge!(h2) do |k, v1, v2|
+      if v1.is_a?(Array) && v2.is_a?(Array)
+        v1.map(&:to_i) - v2.map(&:to_i) - [0]
+      else
+        v1.map(&:to_i)
+      end
+    end
+  end
+
+  def default_ids_hash(populate_values = false)
+    ids = HashWithIndifferentAccess.new
+    hash_keys.each do |col|
+      ids[col] = populate_values ? Array(self.send(col)) : []
+    end
+    ids
+  end
 end

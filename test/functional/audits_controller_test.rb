@@ -8,16 +8,26 @@ class AuditsControllerTest < ActionController::TestCase
 
   def test_show
     get :show, {:id => Audit.first}, set_session_user
+    assert_response :success
     assert_template 'show'
+  end
+
+  def test_show_diff
+    audit = FactoryGirl.create(:audit, :with_diff)
+    get :show, {:id => audit.id}, set_session_user
+    assert_response :success
+    assert_template 'show'
+    assert_template '_diff'
   end
 
   def setup_user
     @request.session[:user] = users(:one).id
-    users(:one).roles       = [Role.find_by_name('Anonymous'), Role.find_by_name('Viewer')]
+    users(:one).roles       = [Role.default, Role.find_by_name('Viewer')]
   end
-  def user_with_viewer_rights_should_fail_to edit_audit
+
+  def user_with_viewer_rights_should_fail_to(edit_audit)
     setup_user
-    get :edit, {:id => Audit.first.id}
+    get :edit, {:id => Audit.first}
     assert @response.status == '403 Forbidden'
   end
 

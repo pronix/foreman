@@ -4,107 +4,149 @@ module Api
       include Api::Version2
       include Api::TaxonomyScope
       include Foreman::Renderer
+      include Foreman::Controller::ProvisioningTemplates
 
-      before_filter :find_resource, :only => [:show, :update, :destroy]
-      before_filter :handle_template_upload, :only => [:create, :update]
-      before_filter :process_template_kind, :only => [:create, :update]
-      before_filter :process_operatingsystems, :only => [:create, :update]
+      before_action :deprecated
 
-      api :GET, "/config_templates/", "List templates"
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      before_action :find_optional_nested_object
+      before_action :find_resource, :only => %w{show update destroy clone}
+
+      before_action :handle_template_upload, :only => [:create, :update]
+      before_action :process_template_kind, :only => [:create, :update]
+      before_action :process_operatingsystems, :only => [:create, :update]
+
+      api :GET, "/config_templates/", N_("List provisioning templates")
+      api :GET, "/operatingsystems/:operatingsystem_id/config_templates", N_("List provisioning templates per operating system")
+      api :GET, "/locations/:location_id/config_templates/", N_("List provisioning templates per location")
+      api :GET, "/organizations/:organization_id/config_templates/", N_("List provisioning templates per organization")
+      param :operatingsystem_id, String, :desc => N_("ID of operating system")
+      param_group :taxonomy_scope, ::Api::V2::BaseController
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @config_templates = ConfigTemplate.search_for(*search_options).paginate(paginate_options).
-          includes(:operatingsystems, :template_combinations, :template_kind)
+        @config_templates = resource_scope_for_index.includes(:template_kind)
       end
 
-      api :GET, "/config_templates/:id", "Show template details"
+      api :GET, "/config_templates/:id", N_("Show provisioning template details")
       param :id, :identifier, :required => true
 
       def show
       end
 
-      api :POST, "/config_templates/", "Create a template"
-      param :config_template, Hash, :required => true do
-        param :name, String, :required => true, :desc => "template name"
-        param :template, String, :required => true
-        param :snippet, :bool, :allow_nil => true
-        param :audit_comment, String, :allow_nil => true
-        param :template_kind_id, :number, :allow_nil => true, :desc => "not relevant for snippet"
-        param :template_combinations_attributes, Array,
-              :desc => "Array of template combinations (hostgroup_id, environment_id)"
-        param :operatingsystem_ids, Array, :desc => "Array of operating systems ID to associate the template with"
+      def_param_group :config_template do
+        param :config_template, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true, :desc => N_("template name")
+          param :template, String, :required => true
+          param :snippet, :bool, :allow_nil => true
+          param :audit_comment, String, :allow_nil => true
+          param :template_kind_id, :number, :allow_nil => true, :desc => N_("not relevant for snippet")
+          param :template_combinations_attributes, Array,
+                :desc => N_("Array of template combinations (hostgroup_id, environment_id)")
+          param :operatingsystem_ids, Array, :desc => N_("Array of operating system IDs to associate with the template")
+          param :locked, :bool, :desc => N_("Whether or not the template is locked for editing")
+          param_group :taxonomies, ::Api::V2::BaseController
+        end
       end
 
+      api :POST, "/config_templates/", N_("Create a provisioning template")
+      param_group :config_template, :as => :create
+
       def create
-        @config_template = ConfigTemplate.new(params[:config_template])
+        @config_template = ProvisioningTemplate.new(params[:config_template])
         process_response @config_template.save
       end
 
-      api :PUT, "/config_templates/:id", "Update a template"
+      api :PUT, "/config_templates/:id", N_("Update a provisioning template")
       param :id, :identifier, :required => true
-      param :config_template, Hash, :required => true do
-        param :name, String, :desc => "template name"
-        param :template, String
-        param :snippet, :bool
-        param :audit_comment, String, :allow_nil => true
-        param :template_kind_id, :number, :allow_nil => true, :desc => "not relevant for snippet"
-        param :template_combinations_attributes, Array, :desc => "Array of template combinations (hostgroup_id, environment_id)"
-        param :operatingsystem_ids, Array, :desc => "Array of operating systems ID to associate the template with"
-      end
+      param_group :config_template
 
       def update
         process_response @config_template.update_attributes(params[:config_template])
       end
 
       api :GET, "/config_templates/revision"
-      param :version, String, :desc => "template version"
+      param :version, String, :desc => N_("template version")
 
       def revision
-        audit = Audit.find(params[:version])
+        audit = Audit.authorized(:view_audit_logs).find(params[:version])
         render :json => audit.revision.template
       end
 
-      api :DELETE, "/config_templates/:id", "Delete a template"
+      api :DELETE, "/config_templates/:id", N_("Delete a provisioning template")
       param :id, :identifier, :required => true
 
       def destroy
         process_response @config_template.destroy
       end
 
-      api :GET, "/config_templates/build_pxe_default", "Change the default PXE menu on all configured TFTP servers"
+      api :POST, "/config_templates/build_pxe_default", N_("Update the default PXE menu on all configured TFTP servers")
 
       def build_pxe_default
-        status, msg = ConfigTemplate.build_pxe_default(self)
-        render :json => msg, :status => status
+        Foreman::Deprecation.api_deprecation_warning("GET method for build pxe default is deprecated. Please use POST instead") if request.method == "GET"
+        status, msg = ProvisioningTemplate.authorized(:deploy_provisioning_templates).build_pxe_default(self)
+        render_message(msg, :status => status)
+      end
+
+      def_param_group :config_template_clone do
+        param :config_template, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true, :desc => N_("template name")
+        end
+      end
+
+      api :POST, "/config_templates/:id/clone", N_("Clone a provision template")
+      param :id, :identifier, :required => true
+      param_group :config_template_clone, :as => :create
+
+      def clone
+        @config_template = @config_template.clone
+        load_vars_from_template
+        @config_template.name = params[:config_template][:name]
+        process_response @config_template.save
+      end
+
+      def resource_name(resource = nil)
+        if resource.present?
+          super
+        else
+          'config_template'
+        end
       end
 
       private
 
-      # convert the file upload into a simple string to save in our db.
-      def handle_template_upload
-        return unless params[:config_template] and (t=params[:config_template][:template])
-        params[:config_template][:template] = t.read if t.respond_to?(:read)
+      def type_name_singular
+        @type_name_singular ||= resource_name
       end
 
-      def default_template_url template, hostgroup
-        url_for :only_path => false, :action => :template, :controller => '/unattended',
-                :id        => template.name, :hostgroup => hostgroup.name
+      def deprecated
+        Foreman::Deprecation.api_deprecation_warning("The resources /config_templates were moved to /provisioning_templates. Please use the new path instead")
       end
 
-      def process_template_kind
-        return unless params[:config_template] and (tk=params[:config_template].delete(:template_kind))
-        params[:config_template][:template_kind_id] = tk[:id]
+      def resource_class
+        ProvisioningTemplate
       end
 
       def process_operatingsystems
-        return unless (ct = params[:config_template]) and (operatingsystems = ct.delete(:operatingsystems))
+        return unless (ct = params[:config_template]) && (operatingsystems = ct.delete(:operatingsystems))
         ct[:operatingsystem_ids] = operatingsystems.collect {|os| os[:id]}
       end
 
+      def allowed_nested_id
+        %w(operatingsystem_id location_id organization_id)
+      end
+
+      def controller_permission
+        @controller_permission ||= resource_class.to_s.underscore.pluralize
+      end
+
+      def action_permission
+        case params[:action]
+          when 'clone'
+            'create'
+          else
+            super
+        end
+      end
     end
   end
 end

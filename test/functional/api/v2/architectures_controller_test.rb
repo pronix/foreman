@@ -1,15 +1,14 @@
 require 'test_helper'
 
 class Api::V2::ArchitecturesControllerTest < ActionController::TestCase
-
   arch_i386 = { :name => 'i386' }
 
   def user_one_as_anonymous_viewer
-    users(:one).roles = [Role.find_by_name('Anonymous'), Role.find_by_name('Viewer')]
+    users(:one).roles = [Role.default, Role.find_by_name('Viewer')]
   end
 
   def user_one_as_manager
-    users(:one).roles = [Role.find_by_name('Anonymous'), Role.find_by_name('Manager')]
+    users(:one).roles = [Role.default, Role.find_by_name('Manager')]
   end
 
   test "should get index" do
@@ -31,11 +30,11 @@ class Api::V2::ArchitecturesControllerTest < ActionController::TestCase
     assert_difference('Architecture.count') do
       post :create, { :architecture => arch_i386 }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update architecture" do
-    put :update, { :id => architectures(:x86_64).to_param, :architecture => { } }
+    put :update, { :id => architectures(:x86_64).to_param, :architecture => {:name => 'newx86_64'} }
     assert_response :success
   end
 
@@ -56,7 +55,7 @@ class Api::V2::ArchitecturesControllerTest < ActionController::TestCase
   test "user with viewer rights should fail to update an architecture" do
     user_one_as_anonymous_viewer
     as_user :one do
-      put :update, { :id => architectures(:x86_64).to_param, :architecture => { } }
+      put :update, { :id => architectures(:x86_64).to_param, :architecture => {:name => 'newx86_64'} }
     end
     assert_response :forbidden
   end
@@ -64,7 +63,7 @@ class Api::V2::ArchitecturesControllerTest < ActionController::TestCase
   test "user with manager rights should success to update an architecture" do
     user_one_as_manager
     as_user :one do
-      put :update, { :id => architectures(:x86_64).to_param, :architecture => { } }
+      put :update, { :id => architectures(:x86_64).to_param, :architecture => {:name => 'newx86_64'} }
     end
     assert_response :success
   end
@@ -75,5 +74,13 @@ class Api::V2::ArchitecturesControllerTest < ActionController::TestCase
       get :index, { }
     end
     assert_response :success
+  end
+
+  test "403 response contains missing permissions" do
+    as_user :one do
+      get :index, { }
+    end
+    assert_response :forbidden
+    assert_includes @response.body, 'view_architectures'
   end
 end

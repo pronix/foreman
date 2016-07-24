@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
-
   test "should get all smart class parameters" do
     get :index
     assert_response :success
@@ -12,13 +11,24 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
   end
 
   test "should get smart class parameters for a specific host" do
-    get :index, {:host_id => hosts(:one).to_param}
+    @host = FactoryGirl.create(:host,
+                               :puppetclasses => [puppetclasses(:one)],
+                               :environment => environments(:production))
+    get :index, {:host_id => @host.to_param}
     assert_response :success
     assert_not_nil assigns(:smart_class_parameters)
     results = ActiveSupport::JSON.decode(@response.body)
     assert !results['results'].empty?
     assert_equal 1, results['results'].count
     assert_equal "cluster", results['results'][0]['parameter']
+  end
+
+  test "should get :not_found for a non-existing host" do
+    non_existing_id = 100000
+    get :index, {:host_id => non_existing_id}
+    assert_response :not_found
+    results = ActiveSupport::JSON.decode(@response.body)
+    assert_equal "Host with id '#{non_existing_id}' was not found", results["error"]["message"]
   end
 
   test "should get smart class parameters for a specific hostgroup" do
@@ -31,6 +41,14 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
     assert_equal "cluster", results['results'][0]['parameter']
   end
 
+  test "should get :not_found for a non-existing hostgroup" do
+    non_existing_id = 100000
+    get :index, {:hostgroup_id => non_existing_id}
+    assert_response :not_found
+    results = ActiveSupport::JSON.decode(@response.body)
+    assert_equal "Hostgroup with id '#{non_existing_id}' was not found", results["error"]["message"]
+  end
+
   test "should get smart class parameters for a specific puppetclass" do
     get :index, {:puppetclass_id => puppetclasses(:two).id}
     assert_response :success
@@ -41,6 +59,14 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
     assert_equal "custom_class_param", results['results'][0]['parameter']
   end
 
+  test "should get :not_found for a non-existing puppetclass" do
+    non_existing_id = 100000
+    get :index, {:puppetclass_id => non_existing_id}
+    assert_response :not_found
+    results = ActiveSupport::JSON.decode(@response.body)
+    assert_equal "Puppetclass with id '#{non_existing_id}' was not found", results["error"]["message"]
+  end
+
   test "should get smart class parameters for a specific environment" do
     get :index, {:environment_id => environments(:production).id}
     assert_response :success
@@ -49,6 +75,14 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
     assert !results['results'].empty?
     assert_equal 2, results['results'].count
     assert_equal ["cluster", "custom_class_param"], results['results'].map {|cp| cp["parameter"] }.sort
+  end
+
+  test "should get :not_found for a non-existing environment" do
+    non_existing_id = 100000
+    get :index, {:environment_id => non_existing_id}
+    assert_response :not_found
+    results = ActiveSupport::JSON.decode(@response.body)
+    assert_equal "Environment with id '#{non_existing_id}' was not found", results["error"]["message"]
   end
 
   test "should get smart class parameters for a specific environment and puppetclass combination" do
@@ -82,19 +116,20 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
     assert !show_response.empty?
   end
 
+  test "should show puppetclass name and id" do
+    get :show, {:id => lookup_keys(:five).key, :puppetclass_id => puppetclasses(:two).id}
+    assert_response :success
+    results = ActiveSupport::JSON.decode(@response.body)
+    assert_equal puppetclasses(:two).name, results['puppetclass_name']
+    assert_equal puppetclasses(:two).id, results['puppetclass_id']
+  end
+
   test "should update smart class parameter" do
     orig_value = lookup_keys(:five).default_value
     put :update, { :id => lookup_keys(:five).to_param, :smart_class_parameter => { :default_value => "33333" } }
     assert_response :success
     new_value = lookup_keys(:five).reload.default_value
     refute_equal orig_value, new_value
-  end
-
-  test "should destroy smart class parameter" do
-    assert_difference('LookupKey.count', -1) do
-      delete :destroy, { :id => lookup_keys(:five).to_param }
-    end
-    assert_response :success
   end
 
   test "should return error if smart class parameter if it does not belong to specified puppetclass" do
@@ -104,4 +139,9 @@ class Api::V2::SmartClassParametersControllerTest < ActionController::TestCase
     # assert !show_response.empty?
   end
 
+  test "should get smart parameters with non admin user" do
+    setup_user "view", "external_parameters"
+    get :show, {:id => lookup_keys(:five).id}, set_session_user.merge(:user => users(:one).id)
+    assert_response :success
+  end
 end

@@ -1,23 +1,20 @@
 module Foreman
-
   class WrappedException < ::Foreman::Exception
-    def initialize exception, message, *params
+    def initialize(wrapped_exception, message, *params)
       super(message, *params)
-      @exception = exception
+      @wrapped_exception = wrapped_exception
     end
 
     def wrapped_exception
-      @exception
+      @wrapped_exception
     end
 
     def message
-      if @exception.nil?
-        wrapped = ""
-      else
-        wrapped = " (#{@exception.class.name} - #{@exception.message})"
-      end
-      "#{code}: #{@message}#{wrapped}"
+      super unless @wrapped_exception.present?
+
+      cls = @wrapped_exception.class.name
+      msg = @wrapped_exception.message.try(:truncate, 90)
+      super + " ([#{cls}]: #{msg})"
     end
   end
-
 end

@@ -1,37 +1,39 @@
 # foreman plugins import this file therefore __FILE__ cannot be used
 FOREMAN_GEMFILE = __FILE__ unless defined? FOREMAN_GEMFILE
-require File.expand_path('../config/settings', FOREMAN_GEMFILE)
-require File.expand_path('../lib/regexp_extensions', FOREMAN_GEMFILE)
 
 source 'https://rubygems.org'
 
-gem 'rails', '3.2.15'
-gem 'json'
-gem 'rest-client', :require => 'rest_client'
-gem "audited-activerecord", "3.0.0"
-gem "will_paginate", "~> 3.0.2"
-gem "ancestry", "~> 2.0"
-gem 'scoped_search', '>= 2.5'
-gem 'net-ldap'
-gem 'uuidtools'
-gem "apipie-rails", "~> 0.0.23"
-gem 'rabl', '>= 0.7.5', '<= 0.9.0'
-gem 'oauth'
-gem 'foreigner', '~> 1.4.2'
-gem 'rails3_before_render'
-
-if RUBY_VERSION =~ /^1\.8/
-  # Older version of safemode for Ruby 1.8, as the latest causes regexp overflows (#2100)
-  gem 'safemode', '~> 1.0.1'
-  gem 'ruby_parser', '>= 2.3.1', '< 3.0'
-
-  # Used in fog, rbovirt etc.  1.6.0 breaks Ruby 1.8 compatibility.
-  gem 'nokogiri', '~> 1.5.0'
-else
-  # Newer version of safemode contains fixes for Ruby 1.9
-  gem 'safemode', '~> 1.2'
-  gem 'ruby_parser', '~> 3.0.0'
-end
+gem 'rails', '4.2.6'
+gem 'rest-client', '>= 1.8.0', '< 3', :require => 'rest_client'
+gem 'audited-activerecord', '~> 4.0'
+gem 'will_paginate', '~> 3.0'
+gem 'ancestry', '~> 2.0'
+gem 'scoped_search', '>= 3.2.2', '< 4'
+gem 'ldap_fluff', '>= 0.3.5', '< 1.0'
+gem 'apipie-rails', '~> 0.3.4'
+gem 'rabl', '>= 0.11', "< 0.13"
+gem 'oauth', '~> 0.4'
+gem 'deep_cloneable', '~> 2.0'
+gem 'validates_lengths_from_database', '~> 0.5'
+gem 'friendly_id', '~> 5.0'
+gem 'secure_headers', '~> 1.3'
+gem 'safemode', '~> 1.2', '>= 1.2.4'
+gem 'fast_gettext', '>= 0.8', '< 2.0'
+gem 'gettext_i18n_rails', '~> 1.0'
+gem 'rails-i18n', '~> 4.0.0'
+gem 'turbolinks', '~> 2.5'
+gem 'logging', '>= 1.8.0', '< 3.0.0'
+gem 'fog-core', '1.42.0'
+gem 'net-scp'
+gem 'net-ssh'
+gem 'net-ldap', '>= 0.8.0'
+gem 'activerecord-session_store', '>= 0.1.1', '< 2'
+gem 'protected_attributes', '~> 1.1.1'
+gem 'sprockets', '~> 3'
+gem 'sprockets-rails', '>= 2.3.3', '< 3'
+gem 'responders', '~> 2.0'
+gem 'roadie-rails', '~> 1.1'
+gem 'x-editable-rails', '~> 1.5.5'
 
 Dir["#{File.dirname(FOREMAN_GEMFILE)}/bundler.d/*.rb"].each do |bundle|
   self.instance_eval(Bundler.read_file(bundle))

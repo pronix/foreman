@@ -1,5 +1,4 @@
 class ForemanTrend < Trend
-
   validates :trendable_id, :uniqueness => {:scope => :trendable_type}
 
   def to_label
@@ -33,6 +32,6 @@ class ForemanTrend < Trend
   end
 
   def find_hosts
-    trendable.hosts.find(:all, :order => 'name')
+    trendable.hosts.order(:name)
   end
 end

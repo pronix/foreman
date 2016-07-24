@@ -1,7 +1,6 @@
-require 'test_helper'
+require 'integration_test_helper'
 
-class OperatingsystemTest < ActionDispatch::IntegrationTest
-
+class OperatingsystemIntegrationTest < ActionDispatch::IntegrationTest
   test "index page" do
     assert_index_page(operatingsystems_path,"Operating systems","New Operating system")
   end
@@ -11,7 +10,7 @@ class OperatingsystemTest < ActionDispatch::IntegrationTest
     fill_in "operatingsystem_name", :with => "Archy"
     fill_in "operatingsystem_major", :with => "9"
     fill_in "operatingsystem_minor", :with => "2"
-    select "Archlinux", :from => "operatingsystem_family"
+    select "Arch Linux", :from => "operatingsystem_family"
     check "x86_64"
     assert_submit_button(operatingsystems_path)
     assert page.has_link? "Archy 9.2"
@@ -32,5 +31,4 @@ class OperatingsystemTest < ActionDispatch::IntegrationTest
   # PENDING
   # test "add templates" do
   # end
-
 end

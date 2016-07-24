@@ -1,32 +1,21 @@
 module Nic
   class BMC < Managed
-
-    ATTRIBUTES = [:username, :password, :provider]
-    attr_accessible :updated_at, *ATTRIBUTES
-
     PROVIDERS = %w(IPMI)
-    validates :provider, :inclusion => {:in => PROVIDERS}
+    before_validation :ensure_physical
+    before_validation { |nic| nic.provider.try(:upcase!) }
+    validates :provider, :presence => true, :inclusion => { :in => PROVIDERS }
+    validates :mac, :presence => true, :if => :managed?
+    validate :validate_bmc_proxy
 
-    ATTRIBUTES.each do |method|
-      define_method method do
-        self.attrs ||= { }
-        self.attrs[method]
-      end
-
-      define_method "#{method}=" do |value|
-        self.attrs         ||= { }
-        old_value = attrs[method]
-        self.attrs[method] = value
-        # attrs_will_change! makes the record dirty. Otherwise, rails has a bug that it won't save if no other field is changed.
-        self.attrs_will_change! if (old_value != value)
-      end
+    def virtual
+      false
     end
+    alias_method :virtual?, :virtual
 
+    attr_exportable :provider, :username, :password => ->(nic) { nic.decrypt_field(nic.password) }
 
     def proxy
-      # try to find a bmc proxy in the same subnet as our bmc device
-      proxy   = SmartProxy.bmc_proxies.joins(:subnets).where(['dhcp_id = ? or tftp_id = ?', subnet_id, subnet_id]).first if subnet_id
-      proxy ||= SmartProxy.bmc_proxies.first
+      proxy = bmc_proxy
       raise Foreman::Exception.new(N_('Unable to find a proxy with BMC feature')) if proxy.nil?
       ProxyAPI::BMC.new({ :host_ip  => ip,
                           :url      => proxy.url,
@@ -34,5 +23,37 @@ module Nic
                           :password => password })
     end
 
+    def self.humanized_name
+      N_('BMC')
+    end
+
+    class Jail < Nic::Managed::Jail
+      allow :provider, :username, :password
+    end
+
+    private
+
+    def ensure_physical
+      self.virtual = false
+      true # don't stop validation chain
+    end
+
+    def bmc_proxy
+      if subnet.present?
+        proxy = subnet.proxies.find { |subnet_proxy| subnet_proxy.has_feature?('BMC') }
+      end
+      proxy ||= SmartProxy.unscoped.with_features("BMC").first
+      proxy
+    end
+
+    def validate_bmc_proxy
+      return true unless managed?
+      return true if host && !host_managed?
+      unless bmc_proxy
+        errors.add(:type, N_('There is no proxy with BMC feature set up. Please register a smart proxy with this feature.'))
+      end
+    end
   end
+
+  Base.register_type(BMC)
 end

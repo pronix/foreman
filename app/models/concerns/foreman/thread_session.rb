@@ -14,7 +14,6 @@
 
 module Foreman
   module ThreadSession
-
     # module to be include in controller to clear the session data
     # after (and evenutally before) the request processing.
     # Without it we're risking inter-users interference.
@@ -22,7 +21,7 @@ module Foreman
       extend ActiveSupport::Concern
 
       included do
-        around_filter :clear_thread
+        around_action :clear_thread
       end
 
       def clear_thread
@@ -66,12 +65,17 @@ module Foreman
         #
         # @param [String] login to find from the database
         # @param [block] block to execute
-        def as login
+        def as(login)
           old_user = current
-          self.current = User.find_by_login(login)
+          self.current = User.unscoped.find_by_login(login)
+          raise ::Foreman::Exception.new(N_("Cannot find user %s when switching context"), login) unless self.current.present?
           yield if block_given?
         ensure
           self.current = old_user
+        end
+
+        def as_anonymous_admin(&block)
+          as User::ANONYMOUS_ADMIN, &block
         end
       end
     end
@@ -90,7 +94,7 @@ module Foreman
             raise(ArgumentError, "Unable to set current organization, expected class '#{self}', got #{organization.inspect}")
           end
 
-          Rails.logger.debug "Setting current organization thread-local variable to #{organization || "none"}"
+          Rails.logger.debug "Setting current organization thread-local variable to #{organization || 'none'}"
           Thread.current[:organization] = organization
         end
 
@@ -102,7 +106,7 @@ module Foreman
         #
         # @param [org]
         # @param [block] block to execute
-        def as_org org
+        def as_org(org)
           old_org = current
           self.current = org
           yield if block_given?
@@ -125,7 +129,7 @@ module Foreman
             raise(ArgumentError, "Unable to set current location, expected class '#{self}'. got #{location.inspect}")
           end
 
-          Rails.logger.debug "Setting current location thread-local variable to #{location || "none"}"
+          Rails.logger.debug "Setting current location thread-local variable to #{location || 'none'}"
           Thread.current[:location] = location
         end
 
@@ -137,7 +141,7 @@ module Foreman
         #
         # @param [location]
         # @param [block] block to execute
-        def as_location location
+        def as_location(location)
           old_location = current
           self.current = location
           yield if block_given?
@@ -146,6 +150,5 @@ module Foreman
         end
       end
     end
-
   end
 end

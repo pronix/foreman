@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::CommonParametersControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => 'special_key', :value => '123' }
 
   test "should get index" do
@@ -23,11 +22,11 @@ class Api::V2::CommonParametersControllerTest < ActionController::TestCase
     assert_difference('CommonParameter.count') do
       post :create, { :common_parameter => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update common_parameter" do
-    put :update, { :id => parameters(:common).to_param, :common_parameter => { } }
+    put :update, { :id => parameters(:common).to_param, :common_parameter => valid_attrs }
     assert_response :success
   end
 
@@ -37,5 +36,4 @@ class Api::V2::CommonParametersControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

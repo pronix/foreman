@@ -1,4 +1,4 @@
-<%= form_for @environment, :url => (@environment.new_record? ? environments_path : environment_path(:id => @environment.id)) do |f| %>
+<%= form_for @environment, :url => (@environment.new_record? ? environments_path : environment_path(:id => @environment)) do |f| %>
   <%= base_errors_for @environment %>
   <% if show_taxonomy_tabs? %>
     <ul class="nav nav-tabs" data-tabs="tabs">
@@ -17,17 +17,7 @@
         <%= text_f f, :name %>
       </div>
 
-      <% if show_location_tab? %>
-        <div class="tab-pane" id="locations">
-          <%= multiple_checkboxes f, :locations, @environment, Location, { :prefix => "environment", :label => _("Locations") } %>
-        </div>
-      <% end %>
-
-      <% if show_organization_tab? %>
-        <div class="tab-pane" id="organizations">
-          <%= multiple_checkboxes f, :organizations, @environment, Organization, { :prefix => "environment", :label => _("Organizations") } %>
-        </div>
-      <% end %>
+      <%= render 'taxonomies/loc_org_tabs', :f => f, :obj => @environment %>
     </div>
 
   <% else %>

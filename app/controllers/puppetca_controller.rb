@@ -1,54 +1,57 @@
 class PuppetcaController < ApplicationController
-  before_filter :find_proxy
-
   def index
-    # expire cache if forced
-    Rails.cache.delete("ca_#{@proxy.id}") if params[:expire_cache] == "true"
+    find_proxy
+    @certificates = @proxy.statuses[:puppetca].certs
+    render :partial => 'puppetca/list'
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
 
-    begin
-      certs = if params[:state].blank?
-                SmartProxies::PuppetCA.find_by_state(@proxy, "valid") + SmartProxies::PuppetCA.find_by_state(@proxy, "pending")
-              elsif params[:state] == "all"
-                SmartProxies::PuppetCA.all @proxy
-              else
-                SmartProxies::PuppetCA.find_by_state @proxy, params[:state]
-              end
-    rescue => e
-      certs = []
-      error e
-      redirect_to :back and return
-    end
-    begin
-      @certificates = certs.sort.paginate :page => params[:page], :per_page => params[:per_page] || 20
-    rescue => e
-      error e
-    end
+  def counts
+    find_proxy
+    @certificates = @proxy.statuses[:puppetca].certs
+    render :partial => 'puppetca/counts'
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
+  end
+
+  def expiry
+    find_proxy
+    render :partial => 'puppetca/expiry', :locals => { :expiry => @proxy.statuses[:puppetca].expiry }
+  rescue Foreman::Exception => exception
+    process_ajax_error exception
   end
 
   def update
-    cert = SmartProxies::PuppetCA.find(@proxy, params[:id])
-    if cert.sign
-      process_success({ :success_redirect => smart_proxy_puppetca_index_path(@proxy, :state => params[:state]), :object_name => cert.to_s })
-    else
-      process_error({ :redirect => smart_proxy_puppetca_index_path(@proxy) })
-    end
-  rescue
-    process_error({ :redirect => smart_proxy_puppetca_index_path(@proxy) })
+    find_proxy(:edit_smart_proxies_puppetca)
+    cert_action(:sign)
   end
 
   def destroy
-    cert = SmartProxies::PuppetCA.find(@proxy, params[:id])
-    if cert.destroy
-      process_success({ :success_redirect => smart_proxy_puppetca_index_path(@proxy, :state => params[:state]), :object_name => cert.to_s })
-    else
-      process_error({ :redirect => smart_proxy_puppetca_index_path(@proxy) })
-    end
+    find_proxy(:destroy_smart_proxies_puppetca)
+    cert_action(:destroy)
   end
 
   private
 
-  def find_proxy
-    @proxy = SmartProxy.find(params[:smart_proxy_id])
+  def find_proxy(permission = :view_smart_proxies_puppetca)
+    @proxy = SmartProxy.authorized(permission).find(params[:smart_proxy_id])
   end
 
+  def cert_action(action)
+    cert = @proxy.statuses[:puppetca].find(params[:id])
+    cert.public_send(action)
+    process_success(:success_redirect => smart_proxy_path(@proxy, :anchor => 'certificates'), :object_name => cert.to_s)
+  rescue => e
+    process_error(:redirect => smart_proxy_path(@proxy, :anchor => 'certificates'), :error_msg => e.message)
+  end
+
+  def action_permission
+    case params[:action]
+      when 'counts', 'expiry'
+        :view
+      else
+        super
+    end
+  end
 end

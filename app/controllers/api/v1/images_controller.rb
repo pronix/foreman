@@ -1,8 +1,8 @@
 module Api
   module V1
     class ImagesController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :find_compute_resource
+      before_action :find_resource, :only => %w{show update destroy}
+      before_action :find_compute_resource
 
       api :GET, "/compute_resources/:compute_resource_id/images/", "List all images for compute resource"
       param :search, String, :desc => "filter results"
@@ -12,7 +12,10 @@ module Api
       param :compute_resource_id, :identifier, :required => true
 
       def index
-        @images = @compute_resource.images.search_for(*search_options).paginate(paginate_options)
+        @images = @compute_resource.
+          images.
+          authorized(:view_images).
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/compute_resources/:compute_resource_id/images/:id/", "Show an image"
@@ -65,9 +68,8 @@ module Api
       private
 
       def find_compute_resource
-        @compute_resource = ComputeResource.find(params[:compute_resource_id])
+        @compute_resource = ComputeResource.authorized(:view_compute_resources).find(params[:compute_resource_id])
       end
-
     end
   end
 end

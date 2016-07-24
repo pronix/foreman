@@ -1,49 +1,34 @@
 <tr>
-  <th style="border: 1px solid #FF9933;
-    border-collapse: collapse;
-    text-align:center;
-    padding: 4px;
-    background-color: #FF0000;">Hostname
+  <th>
+    <%= _('Hostname') %>
   </th>
-  <th style="border: 1px solid #FF9933;
-    border-collapse: collapse;
-    padding: 4px;
-    text-align:center;
-    background-color: #FF0000;">Host group
+  <th>
+    <%= _('Host group') %>
   </th>
-  <th style="border: 1px solid #FF9933;
-    border-collapse: collapse;
-    padding: 4px;
-    text-align:center;
-    background-color: #FF0000;">Environment
+  <th>
+    <%= _('Environment') %>
   </th>
-
-  <th style="border: 1px solid #FF9933;
-    border-collapse: collapse;
-    text-align:center;
-    padding: 4px;
-    background-color: #FF0000;">Last Report
+  <th>
+    <%= _('Last Report') %>
   </th>
 </tr>
 <% list.each do |host| %>
   <tr>
     <%= render 'link_to_host', :host => host %>
-    <td style="border:1px solid #FF9933;border-collapse:collapse;padding:4px;background-color:#FFFFFF;">
+    <td class="hosts-rows">
       <%= host.hostgroup %>
     </td>
-    <td style="border:1px solid #FF9933;border-collapse:collapse;padding:4px;background-color:#FFFFFF;">
+    <td class="hosts-rows">
       <%= host.environment %>
     </td>
     <% if host.last_report %>
-      <td style="border: 1px solid #FF9933;
-        border-collapse: collapse;
-        padding: 4px;
-        background-color: #FFFFFF;"><%= time_ago_in_words(host.last_report) %></td>
+      <td class="hosts-rows">
+        <%= time_ago_in_words(host.last_report) %>
+      </td>
     <% else %>
-      <td style="border: 1px solid #FF9933;
-        border-collapse: collapse;
-        padding: 4px;
-        background-color: #FFFFFF;">Unknown</td>
+      <td class="hosts-rows">
+        <%= _('Unknown') %>
+      </td>
     <% end %>
   </tr>
 <% end %>

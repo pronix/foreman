@@ -33,7 +33,7 @@ namespace :puppet do
           next
         end
 
-        if host.populateFieldsFromFacts
+        if host.populate_fields_from_facts
           counter += 1
         else
           $stdout.puts "#{host.hostname}: #{host.errors.full_messages.join(", ")}"
@@ -52,17 +52,18 @@ namespace :puppet do
         puts "Importing #{name}"
         puppet_facts = File.read(yaml)
         facts_stripped_of_class_names = YAML::load(puppet_facts.gsub(/\!ruby\/object.*$/,''))
-        Host.importHostAndFacts facts_stripped_of_class_names['name'], facts_stripped_of_class_names['values'].with_indifferent_access
+        host = Host::Managed.import_host(facts_stripped_of_class_names['name'], 'puppet')
+        host.import_facts(facts_stripped_of_class_names['values'].with_indifferent_access)
       end
     end
   end
   namespace :import do
     desc "
     Update puppet environments and classes. Optional batch flag triggers run with no prompting\nUse proxy=<proxy name> to import from or get the first one by default"
-    task :puppet_classes,  [:batch] => :environment do | t, args |
+    task :puppet_classes,  [:batch, :envname] => :environment do | t, args |
       args.batch = args.batch == "true"
 
-      proxies = SmartProxy.puppet_proxies
+      proxies = SmartProxy.with_features("Puppet")
       if proxies.empty?
         puts "ERROR: We did not find at least one configured Smart Proxy with the Puppet feature"
         exit 1
@@ -79,7 +80,7 @@ namespace :puppet do
       # the on-disk puppet installation
       begin
         puts "Evaluating possible changes to your installation" unless args.batch
-        importer = PuppetClassImporter.new({ :url => proxy.url })
+        importer = PuppetClassImporter.new({ :url => proxy.url, :env => args.envname })
         changes  = importer.changes
       rescue => e
         if args.batch
@@ -132,7 +133,7 @@ namespace :puppet do
           unless errors.empty?
             puts "Problems were detected during the execution phase"
             puts
-            puts errors.each { |e| e.gsub(/<br\/>/, "\n") } << "\n"
+            puts errors.each { |error| error.gsub(/<br\/>/, "\n") } << "\n"
             puts
             puts "Import failed"
           else
@@ -144,14 +145,13 @@ namespace :puppet do
       end
     end
 
-
     desc "Imports only the puppet environments from SmartProxy source."
     task :environments_only, [:batch] => :environment do | t, args |
       args.batch = args.batch == "true"
       puts " ================================================================ "
       puts "Import starts: #{Time.now.strftime("%Y-%m-%d %H:%M:%S %Z")}"
 
-      proxies = SmartProxy.puppet_proxies
+      proxies = SmartProxy.with_features("Puppet")
       if proxies.empty?
         puts "ERROR: We did not find at least one configured Smart Proxy with the Puppet feature"
         exit 1
@@ -206,7 +206,7 @@ namespace :puppet do
 
       Host.find_each do |host|
         $stdout.print "processing #{host.name} "
-        nodeinfo = YAML::load %x{#{script} #{host.name}}
+        nodeinfo = YAML::load `#{script} #{host.name}`
         if nodeinfo.is_a?(Hash)
           $stdout.puts "DONE" if host.importNode nodeinfo
         else
@@ -216,5 +216,4 @@ namespace :puppet do
       end
     end
   end
-
 end

@@ -1,14 +1,16 @@
 module Api
   module V1
     class BookmarksController < V1::BaseController
-      before_filter :find_resource, :only => [:show, :update, :destroy]
+      include Foreman::Controller::BookmarkCommon
+
+      before_action :find_resource, :only => [:show, :update, :destroy]
 
       api :GET, "/bookmarks/", "List all bookmarks."
       param :page, String, :desc => "paginate results"
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @bookmarks = Bookmark.paginate(paginate_options)
+        @bookmarks = Bookmark.my_bookmarks.paginate(paginate_options)
       end
 
       api :GET, "/bookmarks/:id/", "Show a bookmark."
@@ -49,11 +51,6 @@ module Api
       def destroy
         process_response @bookmark.destroy
       end
-
     end
   end
 end
-
-
-
-

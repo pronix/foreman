@@ -1,8 +1,8 @@
-<%= text_f f, :user, :label => _("Access Key") %>
-<%= password_f f, :password, :label => _("Secret Key") %>
+<%= text_f f, :user, :label => _("Access Key"), :help_inline => documentation_button('5.2.3EC2Notes') %>
+<%= password_f f, :password, :label => _("Secret Key"), :unset => unset_password? %>
 
 <% regions = f.object.regions rescue [] %>
 <%= selectable_f(f, :region, regions, {}, {:label => _('Region'), :disabled => regions.empty?,
                  :help_inline => link_to_function(regions.empty? ? _("Load Regions") : _("Test Connection"), "testConnection(this)",
-                 :class => "btn + #{regions.empty? ? "" : "btn-success"}",
-                 :'data-url' => test_connection_compute_resources_path) + image_tag('/assets/spinner.gif', :id => 'test_connection_indicator', :class => 'hide').html_safe }) %>
+                 :class => "btn + #{regions.empty? ? "btn-default" : "btn-success"}",
+                 :'data-url' => test_connection_compute_resources_path) + hidden_spinner('', :id => 'test_connection_indicator').html_safe }) %>

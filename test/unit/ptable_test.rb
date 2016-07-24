@@ -2,28 +2,20 @@ require 'test_helper'
 
 class PtableTest < ActiveSupport::TestCase
   setup do
-    User.current = User.find_by_login "admin"
+    User.current = users :admin
   end
 
-  test "name can't be blank" do
-    partition_table = Ptable.new :name => "   ", :layout => "any layout"
-    assert partition_table.name.strip.empty?
-    assert !partition_table.save
-  end
+  should validate_presence_of(:name)
+  should_not allow_value('  ').for(:name)
+  should validate_uniqueness_of(:name)
+  should validate_presence_of(:layout)
 
-  test "name can't contain trailing white spaces" do
+  test "name strips leading and trailing white spaces" do
     partition_table = Ptable.new :name => "   Archlinux        default  ", :layout => "any layout"
-    assert !partition_table.name.squeeze(" ").empty?
-    assert !partition_table.save
-
-    partition_table.name.squeeze!(" ")
     assert partition_table.save
-  end
 
-  test "layout can't be blank" do
-    partition_table = Ptable.new :name => "Archlinux default", :layout => "   "
-    assert partition_table.layout.strip.empty?
-    assert !partition_table.save
+    refute partition_table.name.ends_with?(' ')
+    refute partition_table.name.starts_with?(' ')
   end
 
   test "os family can be one of defined os families" do
@@ -62,84 +54,15 @@ class PtableTest < ActiveSupport::TestCase
   #    assert partition_table.save
   #  end
 
-  test "name must be unique" do
-    partition_table_one = Ptable.new :name => "Archlinux default", :layout => "some layout"
-    assert partition_table_one.save
-
-    partition_table_two = Ptable.new :name => "Archlinux default", :layout => "some other layout"
-    assert !partition_table_two.save
-  end
-
   test "should not destroy while using" do
     partition_table = Ptable.new :name => "Ubuntu default", :layout => "some layout"
     assert partition_table.save
 
-    host = hosts(:one)
+    host = FactoryGirl.create(:host)
     host.ptable = partition_table
     host.save(:validate => false)
 
     assert !partition_table.destroy
-  end
-
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_ptables"
-      role.permissions = ["#{operation}_ptables".to_sym]
-      @one.roles = [role]
-      @one.save!
-    end
-    User.current = @one
-  end
-
-  test "user with create permissions should be able to create" do
-    setup_user "create"
-    record =  Ptable.create :name => "dummy", :layout => "layout"
-    assert record.valid?
-    assert !record.new_record?
-  end
-
-  test "user with view permissions should not be able to create" do
-    setup_user "view"
-    record =  Ptable.create :name => "dummy", :layout => "layout"
-    assert record.valid?
-    assert record.new_record?
-  end
-
-  test "user with destroy permissions should be able to destroy" do
-    setup_user "destroy"
-    record =  Ptable.first
-    as_admin do
-      record.hosts.delete_all
-      record.hostgroups.delete_all
-      assert record.destroy
-    end
-    assert record.frozen?
-  end
-
-  test "user with edit permissions should not be able to destroy" do
-    setup_user "edit"
-    record =  Ptable.first
-    assert !record.destroy
-    assert !record.frozen?
-  end
-
-  test "user with edit permissions should be able to edit" do
-    setup_user "edit"
-    record      =  Ptable.first
-    record.name = "renamed"
-    assert record.save
-  end
-
-  test "user with destroy permissions should not be able to edit" do
-    setup_user "destroy"
-    record      =  Ptable.first
-    record.name = "renamed"
-    as_admin do
-      record.hosts.destroy_all
-    end
-    assert !record.save
-    assert record.valid?
   end
 
   test 'when creating a new ptable class object, an audit entry needs to be added' do
@@ -150,4 +73,9 @@ class PtableTest < ActiveSupport::TestCase
     end
   end
 
+  test '#preview_host_collection obeys view_hosts permission' do
+    ptable = FactoryGirl.build(:ptable)
+    Host.expects(:authorized).with(:view_hosts).returns(Host.where(nil))
+    ptable.preview_host_collection
+  end
 end

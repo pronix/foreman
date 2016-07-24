@@ -1,30 +1,36 @@
 class ApplicationController < ActionController::Base
-  include Foreman::Controller::Authentication
-  include Foreman::ThreadSession::Cleaner
+  include ApplicationShared
 
+  force_ssl :if => :require_ssl?
+  ensure_security_headers
   protect_from_forgery # See ActionController::RequestForgeryProtection for details
   rescue_from ScopedSearch::QueryNotSupported, :with => :invalid_search_query
   rescue_from Exception, :with => :generic_exception if Rails.env.production?
   rescue_from ActiveRecord::RecordNotFound, :with => :not_found
-  rescue_from ActionView::MissingTemplate, :with => :api_deprecation_error
+  rescue_from ProxyAPI::ProxyException, :with => :smart_proxy_exception
+  rescue_from Foreman::MaintenanceException, :with => :service_unavailable
 
   # standard layout to all controllers
   helper 'layout'
+  helper_method :authorizer
 
-  before_filter :require_ssl, :require_login
-  before_filter :set_gettext_locale_db, :set_gettext_locale
-  before_filter :session_expiry, :update_activity_time, :unless => proc {|c| c.remote_user_provided? || c.api_request? } if SETTINGS[:login]
-  before_filter :set_taxonomy, :require_mail, :check_empty_taxonomy
-  before_filter :welcome, :only => :index, :unless => :api_request?
-  before_filter :authorize
+  before_action :require_login
+  before_action :set_gettext_locale_db, :set_gettext_locale
+  before_action :session_expiry, :update_activity_time, :unless => proc {|c| !SETTINGS[:login] || c.remote_user_provided? || c.api_request? }
+  before_action :set_taxonomy, :require_mail, :check_empty_taxonomy
+  before_action :authorize
+  before_action :welcome, :only => :index, :unless => :api_request?
+  around_action :set_timezone
+  layout :display_layout?
+
+  attr_reader :original_search_parameter
 
   cache_sweeper :topbar_sweeper
 
   def welcome
-    @searchbar = true
-    klass = controller_name == "dashboard" ? "Host" : controller_name.camelize.singularize
+    klass = controller_name.camelize.singularize
     if (klass.constantize.first.nil? rescue false)
-      @searchbar = false
+      @welcome = true
       render :welcome rescue nil and return
     end
   rescue
@@ -32,7 +38,12 @@ class ApplicationController < ActionController::Base
   end
 
   def api_request?
-    request.format.json? or request.format.yaml?
+    request.format.try(:json?) || request.format.try(:yaml?)
+  end
+
+  # this method is returns the active user which gets used to populate the audits table
+  def current_user
+    User.current
   end
 
   protected
@@ -43,17 +54,16 @@ class ApplicationController < ActionController::Base
     authorized ? true : deny_access
   end
 
+  def authorizer
+    @authorizer ||= Authorizer.new(User.current, :collection => instance_variable_get("@#{controller_name}"))
+  end
+
   def deny_access
     (User.current.logged? || request.xhr?) ? render_403 : require_login
   end
 
-  def require_ssl
-    # if SSL is not configured, don't bother forcing it.
-    return true unless SETTINGS[:require_ssl]
-    # don't force SSL on localhost
-    return true if request.host=~/localhost|127.0.0.1/
-    # finally - redirect
-    redirect_to :protocol => 'https' and return if request.protocol != 'https' and not request.ssl?
+  def require_ssl?
+    SETTINGS[:require_ssl]
   end
 
   # This filter is called before FastGettext set_gettext_locale and sets user-defined locale
@@ -63,87 +73,109 @@ class ApplicationController < ActionController::Base
   end
 
   def require_mail
-    if User.current && User.current.mail.blank?
-      notice _("Mail is Required")
-      redirect_to edit_user_path(:id => User.current)
+    if User.current && !User.current.hidden? && User.current.mail.blank?
+      msg = _("An email address is required, please update your account details")
+      respond_to do |format|
+        format.html do
+          error msg
+          flash.keep # keep any warnings added by the user login process, they may explain why this occurred
+          redirect_to edit_user_path(:id => User.current)
+        end
+        format.text do
+          render :text => msg, :status => :unprocessable_entity, :content_type => Mime::TEXT
+        end
+      end
+      true
     end
   end
 
-  # this method is returns the active user which gets used to populate the audits table
-  def current_user
-    User.current
-  end
-
   def invalid_request
-    render :text => _('Invalid query'), :status => 400
+    render :text => _('Invalid query'), :status => :bad_request
   end
 
   def not_found(exception = nil)
     logger.debug "not found: #{exception}" if exception
     respond_to do |format|
-      format.html { render "common/404", :status => 404 }
-      format.json { head :status => 404}
-      format.yaml { head :status => 404}
-      format.yml { head :status => 404}
+      format.html { render "common/404", :status => :not_found }
+      format.any { head :status => :not_found}
     end
     true
   end
 
-  def api_deprecation_error(exception = nil)
-    if request.format.json? && !request.env['REQUEST_URI'].match(/\/api\//i)
-      logger.error "#{exception.message} (#{exception.class})\n#{exception.backtrace.join("\n")}"
-      msg = "/api/ prefix must now be used to access API URLs, e.g. #{request.env['HTTP_HOST']}/api#{request.env['REQUEST_URI']}"
-      logger.error "DEPRECATION: #{msg}."
-      render :json => {:message => msg}, :status => 400
-    else
-      raise exception
+  def service_unavailable(exception = nil)
+    logger.debug "service unavailable: #{exception}" if exception
+    respond_to do |format|
+      format.html { render "common/503", :status => :service_unavailable, :locals => { :exception => exception } }
+      format.any { head :status => :service_unavailable }
     end
+    true
+  end
 
+  def smart_proxy_exception(exception = nil)
+    process_error(:redirect => :back, :error_msg => exception.message)
+    Foreman::Logging.exception("ProxyAPI operation FAILED", exception)
   end
 
   # this method sets the Current user to be the Admin
   # its required for actions which are not authenticated by default
   # such as unattended notifications coming from an OS, or fact and reports creations
   def set_admin_user
-    User.current = User.admin
+    User.current = User.anonymous_api_admin
   end
 
   def model_of_controller
-    controller_path.singularize.camelize.gsub('/','::').constantize
+    @model_of_controller ||= controller_path.singularize.camelize.gsub('/','::').constantize
   end
 
-
-  # searches for an object based on its name and assign it to an instance variable
-  # required for models which implement the to_param method
-  #
-  # example:
-  # @host = Host.find_by_name params[:id]
-  def find_by_name
-    not_found and return if params[:id].blank?
-
-    name = controller_name.singularize
-    model = model_of_controller
-    # determine if we are searching for a numerical id or plain name
-    cond = "find" + (params[:id] =~ /\A\d+(-.+)?\Z/ ? "" : "_by_name")
-    not_found and return unless instance_variable_set("@#{name}", model.send(cond, params[:id]))
+  def current_permission
+    [action_permission, controller_permission].join('_')
   end
 
-  def notice notice
-    flash[:notice] = notice
+  def controller_permission
+    controller_name
   end
 
-  def error error
-    flash[:error] = error
+  def action_permission
+    case params[:action]
+      when 'new', 'create'
+        'create'
+      when 'edit', 'update'
+        'edit'
+      when 'destroy'
+        'destroy'
+      when 'index', 'show'
+        'view'
+      else
+        raise ::Foreman::Exception.new(N_("unknown permission for %s"), "#{params[:controller]}##{params[:action]}")
+    end
   end
 
-  def warning warning
-    flash[:warning] = warning
+  # not all models includes Authorizable so we detect whether we should apply authorized scope or not
+  def resource_base
+    @resource_base ||= if model_of_controller.respond_to?(:authorized)
+                         model_of_controller.authorized(current_permission)
+                       else
+                         model_of_controller.where(nil)
+                       end
+  end
+
+  def notice(notice)
+    flash[:notice] = CGI.escapeHTML(notice)
+  end
+
+  def error(error)
+    flash[:error] = CGI.escapeHTML(error)
+  end
+
+  def warning(warning)
+    flash[:warning] = CGI.escapeHTML(warning)
   end
 
   # this method is used with nested resources, where obj_id is passed into the parameters hash.
   # it automatically updates the search text box with the relevant relationship
   # e.g. /hosts/fqdn/reports # would add host = fqdn to the search bar
   def setup_search_options
+    @original_search_parameter = params[:search]
     params[:search] ||= ""
     params.keys.each do |param|
       if param =~ /(\w+)_id$/
@@ -152,32 +184,6 @@ class ApplicationController < ActionController::Base
           params[:search] += query unless params[:search].include? query
         end
       end
-    end
-  end
-
-  def session_expiry
-    if session[:expires_at].blank? or (session[:expires_at].utc - Time.now.utc).to_i < 0
-      expire_session
-      session[:original_uri] = request.fullpath # keep the old request uri that we can redirect later on
-    end
-  rescue => e
-    logger.warn "failed to determine if user sessions needs to be expired, expiring anyway: #{e}"
-    expire_session
-  end
-
-  def update_activity_time
-    session[:expires_at] = Setting[:idle_timeout].minutes.from_now.utc
-  end
-
-  def expire_session
-    logger.info "Session for #{current_user} is expired."
-    sso = get_sso_method
-    reset_session
-    if sso.nil? || !sso.support_expiration?
-      flash[:warning] = _("Your session has expired, please login again")
-      redirect_to login_users_path
-    else
-      redirect_to sso.expiration_url
     end
   end
 
@@ -202,41 +208,47 @@ class ApplicationController < ActionController::Base
 
   def remote_user_provided?
     return false unless Setting["authorize_login_delegation"]
-    return false if api_request? and not Setting["authorize_login_delegation_api"]
+    return false if api_request? && !(Setting["authorize_login_delegation_api"])
     (@remote_user = request.env["REMOTE_USER"]).present?
   end
 
-  private
-  def detect_notices
-    @notices = current_user.notices
+  def display_layout?
+    return false if two_pane?
+    "application"
   end
+
+  private
 
   def require_admin
     unless User.current.admin?
-      render_403
+      render_403(_('Administrator user account required'))
       return false
     end
     true
   end
 
-  def render_403
+  def render_403(msg = nil)
+    if msg.nil?
+      @missing_permissions = Foreman::AccessControl.permissions_for_controller_action(path_to_authenticate)
+      Foreman::Logging.logger('permissions').debug "rendering 403 because of missing permission #{@missing_permissions.map(&:name).join(', ')}"
+    else
+      @missing_permissions = []
+      Foreman::Logging.logger('permissions').debug msg
+    end
+
     respond_to do |format|
-      format.html { render :template => "common/403", :layout => !request.xhr?, :status => 403 }
-      format.atom { head 403 }
-      format.yaml { head 403 }
-      format.yml  { head 403 }
-      format.xml  { head 403 }
-      format.json { head 403 }
+      format.html { render :template => "common/403", :layout => !ajax?, :status => :forbidden }
+      format.any  { head :forbidden }
     end
     false
   end
 
   # this is only used in hosts_controller (by SmartProxyAuth module) to render 403's
   def render_error(msg, status)
-    render_403
+    render_403(msg)
   end
 
-  def process_success hash = {}
+  def process_success(hash = {})
     hash[:object]                 ||= instance_variable_get("@#{controller_name.singularize}")
     hash[:object_name]            ||= hash[:object].to_s
     unless hash[:success_msg]
@@ -251,45 +263,56 @@ class ApplicationController < ActionController::Base
                              raise Foreman::Exception.new(N_("Unknown action name for success message: %s"), action_name)
                            end
     end
-    hash[:success_redirect]       ||= send("#{controller_name}_url")
+    hash[:success_redirect] ||= saved_redirect_url_or(send("#{controller_name}_url"))
 
     notice hash[:success_msg]
     redirect_to hash[:success_redirect] and return
   end
 
-  def process_error hash = {}
+  def process_error(hash = {})
     hash[:object] ||= instance_variable_get("@#{controller_name.singularize}")
-
-    case action_name
-    when "create" then hash[:render] ||= "new"
-    when "update" then hash[:render] ||= "edit"
-    else
-      hash[:redirect] ||= send("#{controller_name}_url")
+    if hash[:render].blank? && hash[:redirect].blank?
+      case action_name
+      when "create" then hash[:render] = "new"
+      when "update" then hash[:render] = "edit"
+      else
+        hash[:redirect] = send("#{controller_name}_url")
+      end
     end
 
-    logger.info "Failed to save: #{hash[:object].errors.full_messages.join(", ")}" if hash[:object].respond_to?(:errors)
+    logger.info "Failed to save: #{hash[:object].errors.full_messages.join(', ')}" if hash[:object].respond_to?(:errors)
     hash[:error_msg] ||= [hash[:object].errors[:base] + hash[:object].errors[:conflict].map{|e| _("Conflict - %s") % e}].flatten
-    hash[:error_msg] = [hash[:error_msg]].flatten
-    hash[:error_msg] = hash[:error_msg].join("<br/>")
+    hash[:error_msg] = [hash[:error_msg]].flatten.to_sentence
     if hash[:render]
-      flash.now[:error] = hash[:error_msg] unless hash[:error_msg].empty?
+      flash.now[:error] = CGI.escapeHTML(hash[:error_msg]) unless hash[:error_msg].empty?
       render hash[:render]
-      return
     elsif hash[:redirect]
       error(hash[:error_msg]) unless hash[:error_msg].empty?
       redirect_to hash[:redirect]
-      return
     end
   end
 
-  def redirect_back_or_to url
+  def process_ajax_error(exception, action = nil)
+    action ||= action_name
+    origin = exception.original_exception if exception.present? && exception.respond_to?(:original_exception)
+    Foreman::Logging.exception("Failed to #{action}", exception)
+    Foreman::Logging.exception("Originally caused by", origin) if origin
+    message = (origin || exception).message
+
+    render :partial => "common/ajax_error", :status => :internal_server_error, :locals => { :message => message }
+  end
+
+  def redirect_back_or_to(url)
     redirect_to request.referer.empty? ? url : :back
   end
 
+  def saved_redirect_url_or(default)
+    session["redirect_to_url_#{controller_name}"] || default
+  end
+
   def generic_exception(exception)
-    logger.warn "Operation FAILED: #{exception}"
-    logger.debug exception.backtrace.join("\n")
-    render :template => "common/500", :layout => !request.xhr?, :status => 500, :locals => { :exception => exception}
+    Foreman::Logging.exception("Action failed", exception)
+    render :template => "common/500", :layout => !request.xhr?, :status => :internal_server_error, :locals => { :exception => exception}
   end
 
   def set_taxonomy
@@ -301,10 +324,8 @@ class ApplicationController < ActionController::Base
                                orgs.first
                              elsif session[:organization_id]
                                orgs.find_by_id(session[:organization_id])
-                             else
-                               nil
                              end
-      warning _("Organization you had selected as your context has been deleted.") if (session[:organization_id] && Organization.current == nil)
+      warning _("Organization you had selected as your context has been deleted.") if (session[:organization_id] && Organization.current.nil?)
     end
 
     if SETTINGS[:locations_enabled]
@@ -313,10 +334,8 @@ class ApplicationController < ActionController::Base
                            locations.first
                          elsif session[:location_id]
                            locations.find_by_id(session[:location_id])
-                         else
-                           nil
                          end
-      warning _("Location you had selected as your context has been deleted.") if (session[:location_id] && Location.current == nil)
+      warning _("Location you had selected as your context has been deleted.") if (session[:location_id] && Location.current.nil?)
     end
   end
 
@@ -325,9 +344,9 @@ class ApplicationController < ActionController::Base
 
     if User.current && User.current.admin?
       if SETTINGS[:locations_enabled] && Location.unconfigured?
-        redirect_to locations_path, :notice => _("You must create at least one location before continuing.")
+        redirect_to main_app.locations_path, :notice => _("You must create at least one location before continuing.")
       elsif SETTINGS[:organizations_enabled] && Organization.unconfigured?
-        redirect_to organizations_path, :notice => _("You must create at least one organization before continuing.")
+        redirect_to main_app.organizations_path, :notice => _("You must create at least one organization before continuing.")
       end
     end
   end
@@ -336,13 +355,39 @@ class ApplicationController < ActionController::Base
   # If the user has a fact_filter then we need to include :fact_values
   # We do not include most associations unless we are processing a html page
   def included_associations(include = [])
-    include += [:hostgroup, :compute_resource, :operatingsystem, :environment, :model ]
-    include += [:fact_values] if User.current.user_facts.any?
-    include
+    include + [ :hostgroup, :compute_resource, :operatingsystem, :environment, :model, :host_statuses, :token ]
   end
 
-  def errors_hash errors
+  def errors_hash(errors)
     errors.any? ? {:status => N_("Error"), :message => errors.full_messages.join('<br>')} : {:status => N_("OK"), :message =>""}
   end
 
+  def taxonomy_scope
+    if params[controller_name.singularize.to_sym]
+      @organization = Organization.find_by_id(params[controller_name.singularize.to_sym][:organization_id])
+      @location     = Location.find_by_id(params[controller_name.singularize.to_sym][:location_id])
+    end
+
+    if instance_variable_get("@#{controller_name}").present?
+      @organization ||= instance_variable_get("@#{controller_name}").organization
+      @location     ||= instance_variable_get("@#{controller_name}").location
+    end
+
+    @organization ||= Organization.find_by_id(params[:organization_id]) if params[:organization_id]
+    @location     ||= Location.find_by_id(params[:location_id])         if params[:location_id]
+
+    @organization ||= Organization.current if SETTINGS[:organizations_enabled]
+    @location     ||= Location.current if SETTINGS[:locations_enabled]
+  end
+
+  def two_pane?
+    request.headers["X-Foreman-Layout"] == 'two-pane' && params[:action] != 'index'
+  end
+
+  # Called from ActionController::RequestForgeryProtection, overrides
+  # nullify session which is the default behavior for unverified requests in Rails 3.
+  # On Rails 4 we can get rid of this and use the strategy ':exception'.
+  def handle_unverified_request
+    raise ::Foreman::Exception.new(N_("Invalid authenticity token"))
+  end
 end

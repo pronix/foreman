@@ -3,61 +3,85 @@ module Api
     class ReportsController < V2::BaseController
       include Api::Version2
       include Foreman::Controller::SmartProxyAuth
+      before_action :deprecated
+      before_action :find_resource, :only => %w{show destroy}
+      before_action :setup_search_options, :only => [:index, :last]
 
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :setup_search_options, :only => [:index, :last]
-      add_puppetmaster_filters :create
+      add_smart_proxy_filters :create, :features => Proc.new { ConfigReportImporter.authorized_smart_proxy_features }
 
-      api :GET, "/reports/", "List all reports."
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/reports/", N_("List all reports")
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @reports = Report.my_reports.includes(:logs => [:source, :message]).
-          search_for(*search_options).paginate(paginate_options)
+        @reports = resource_scope_for_index.my_reports
+        @total = resource_class.my_reports.count
       end
 
-      api :GET, "/reports/:id/", "Show a report."
+      api :GET, "/reports/:id/", N_("Show a report")
       param :id, :identifier, :required => true
 
       def show
       end
 
-      api :POST, "/reports/", "Create a report."
-      param :report, Hash, :required => true do
-        param :host, String, :required => true, :desc => "Hostname or certname"
-        param :reported_at, String, :required => true, :desc => "UTC time of report"
-        param :status, Hash, :required => true, :desc => "Hash of status type totals"
-        param :metrics, Hash, :required => true, :desc => "Hash of report metrics, can be just {}"
-        param :logs, Array, :desc => "Optional array of log hashes"
+      def_param_group :report do
+        param :report, Hash, :required => true, :action_aware => true do
+          param :host, String, :required => true, :desc => N_("Hostname or certname")
+          param :reported_at, String, :required => true, :desc => N_("UTC time of report")
+          param :status, Hash, :required => true, :desc => N_("Hash of status type totals")
+          param :metrics, Hash, :required => true, :desc => N_("Hash of report metrics, can be just {}")
+          param :logs, Array, :desc => N_("Optional array of log hashes")
+        end
       end
+
+      api :POST, "/reports/", N_("Create a report")
+      param_group :report, :as => :create
 
       def create
-        @report = Report.import(params[:report], detected_proxy.try(:id))
+        @report = resource_class.import(params[:report], detected_proxy.try(:id))
         process_response @report.errors.empty?
       rescue ::Foreman::Exception => e
-        render :json => {'message'=>e.to_s}, :status => :unprocessable_entity
+        render_message(e.to_s, :status => :unprocessable_entity)
       end
 
-      api :DELETE, "/ptables/:id/", "Delete a report."
+      api :DELETE, "/reports/:id/", N_("Delete a report")
       param :id, String, :required => true
 
       def destroy
         process_response @report.destroy
       end
 
-      api :GET, "/hosts/:host_id/reports/last", "Show the last report for a given host."
+      api :GET, "/hosts/:host_id/reports/last", N_("Show the last report for a host")
       param :id, :identifier, :required => true
 
       def last
-        conditions = { :host_id => Host.find_by_name(params[:host_id]).try(:id) } unless params[:host_id].blank?
-        max_id = Report.my_reports.where(conditions).maximum(:id)
-        @report = Report.includes(:logs => [:message, :source]).find(max_id)
+        conditions = { :host_id => resource_finder(Host.authorized(:view_hosts), params[:host_id]).try(:id) } if params[:host_id].present?
+        max_id = resource_scope.where(conditions).maximum(:id)
+        @report = resource_scope.includes(:logs => [:message, :source]).find(max_id)
         render :show
       end
 
+      private
+
+      def deprecated
+        Foreman::Deprecation.api_deprecation_warning("The resources /reports were moved to /config_reports. Please use the new path instead")
+      end
+
+      def resource_class
+        ConfigReport
+      end
+
+      def resource_scope(options = {})
+        super(options.merge(:permission => :view_config_reports)).my_reports
+      end
+
+      def action_permission
+        case params[:action]
+          when 'last'
+            'view'
+          else
+            super
+        end
+      end
     end
   end
 end

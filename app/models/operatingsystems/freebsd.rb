@@ -6,13 +6,13 @@ class Freebsd < Operatingsystem
   # -as initrd we will use your custom FreeBSD-<arch>-<version>-mfs.img in boot
   PXEFILES = {}
 
-  # Simple output of the media url
-  def mediumpath host
-    medium_uri(host).to_s
+  class << self
+    delegate :model_name, :to => :superclass
   end
 
-  def class
-    Operatingsystem
+  # Simple output of the media url
+  def mediumpath(host)
+    medium_uri(host).to_s.gsub("x86_64","amd64")
   end
 
   def pxe_type
@@ -27,12 +27,15 @@ class Freebsd < Operatingsystem
     pxedir + "/" + PXEFILES[file]
   end
 
-  def kernel arch
+  def kernel(arch)
     "memdisk"
   end
 
-  def initrd arch
+  def initrd(arch)
     "boot/FreeBSD-#{arch}-#{release}-mfs.img"
   end
-end
 
+  def display_family
+    "FreeBSD"
+  end
+end

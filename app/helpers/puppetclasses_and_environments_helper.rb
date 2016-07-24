@@ -1,5 +1,5 @@
 module PuppetclassesAndEnvironmentsHelper
-  def class_update_text pcs, env
+  def class_update_text(pcs, env)
     if pcs.empty?
       _("Empty environment")
     elsif pcs == ["_destroy_"]
@@ -11,29 +11,37 @@ module PuppetclassesAndEnvironmentsHelper
     end
   end
 
-  def import_proxy_select hash
-    select_action_button( _('Import'),
-      SmartProxy.puppet_proxies.map do |proxy|
-        display_link_if_authorized(_("Import from %s") % proxy.name, hash.merge(:proxy => proxy), :class=>'btn')
-      end.flatten
-    )
+  def import_proxy_select(hash)
+    select_action_button(_('Import'), {}, import_proxy_links(hash))
+  end
+
+  def import_proxy_links(hash, classes = nil)
+    SmartProxy.with_features("Puppet").map do |proxy|
+      display_link_if_authorized(_("Import from %s") % proxy.name, hash.merge(:proxy => proxy), {:class=>classes})
+    end.flatten
   end
 
   private
-  def pretty_print classes
+
+  def pretty_print(classes)
     hash = { }
     classes.each do |klass|
       if (mod = klass.gsub(/::.*/, ""))
         hash[mod] ||= []
         hash[mod] << klass
-      else
-        next
       end
     end
     hash.keys.sort.map do |key|
-      link_to key,{}, {:remote => true, :rel => "popover", :data => {"content" => hash[key].sort.join('<br>').html_safe, "original-title" => key}}
+      num = hash[key].size
+      num_tag = "<span class='label label-info'>#{num}</span>".html_safe
+      content_tag(:a, key, { :rel => "popover",
+                             :data => { :content => hash[key].sort.join('<br>').html_safe,
+                                        :"original-title" => n_("%{name} has %{num_tag} class", "%{name} has %{num_tag} classes", num) % {:name => key, :num_tag => num_tag},
+                                        :trigger => "focus",
+                                        :container => 'body',
+                                        :html => true },
+                             :role => 'button',
+                             :tabindex => '-1' })
     end.to_sentence.html_safe
-
   end
-
 end

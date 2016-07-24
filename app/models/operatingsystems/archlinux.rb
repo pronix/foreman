@@ -1,15 +1,13 @@
 class Archlinux < Operatingsystem
-
   PXEFILES = {:kernel => "linux", :initrd => "initrd"}
 
-  # Simple output of the media url
-  def mediumpath host
-    medium_uri(host).to_s
+  class << self
+    delegate :model_name, :to => :superclass
   end
 
-  # Override the class representation, as this breaks many rails helpers
-  def class
-    Operatingsystem
+  # Simple output of the media url
+  def mediumpath(host)
+    medium_uri(host).to_s
   end
 
   def pxe_type
@@ -24,4 +22,7 @@ class Archlinux < Operatingsystem
     pxedir + "/" + PXEFILES[file]
   end
 
+  def display_family
+    "Arch Linux"
+  end
 end

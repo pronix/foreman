@@ -1,48 +1,56 @@
 module Api
   module V2
     class RolesController < V2::BaseController
-      before_filter :require_admin
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_optional_nested_object
+      before_action :find_resource, :only => %w{show update destroy}
 
-      api :GET, "/roles/", "List all roles."
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/roles/", N_("List all roles")
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @roles = Role.search_for(*search_options).paginate(paginate_options)
+        params[:order] ||= 'name'
+        @roles = resource_scope_for_index
       end
 
-      api :GET, "/roles/:id/", "Show an role."
+      api :GET, "/roles/:id/", N_("Show a role")
       param :id, :identifier, :required => true
 
       def show
       end
 
-      api :POST, "/roles/", "Create an role."
-      param :role, Hash, :required => true do
-        param :name, String, :required => true
+      def_param_group :role do
+        param :role, Hash, :required => true, :action_aware => true do
+          param :name, String, :required => true
+        end
       end
+
+      api :POST, "/roles/", N_("Create a role")
+      param_group :role, :as => :create
 
       def create
         @role = Role.new(params[:role])
         process_response @role.save
       end
 
-      api :PUT, "/roles/:id/", "Update an role."
+      api :PUT, "/roles/:id/", N_("Update a role")
       param :id, String, :required => true
-      param :role, Hash, :required => true do
-        param :name, String
-      end
+      param_group :role
 
       def update
         process_response @role.update_attributes(params[:role])
       end
 
-      api :DELETE, "/roles/:id/", "Delete an role."
+      api :DELETE, "/roles/:id/", N_("Delete a role")
       param :id, String, :required => true
 
       def destroy
         process_response @role.destroy
+      end
+
+      private
+
+      def allowed_nested_id
+        %w(user_id)
       end
     end
   end

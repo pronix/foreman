@@ -1,45 +1,59 @@
 //on load
-$(function() {
+$(document).on("ContentLoad", function() {
   //select the first tab
-  $('.smart-var-tabs li a span').hide();
   select_first_tab();
-  //make the remove variable button visible only on the active pill
-  $(document).on('click', '.smart-var-tabs li a', function(){ show_delete_button(this);});
+  $(document).on('click', '.nav-tabs a[data-toggle="tab"]', function(){select_first_tab();});
+  // expend inner form fields
+  $('.tabs-left .col-md-4').removeClass('col-md-4').addClass('col-md-8');
   //remove variable click event
-  $(document).on('click', '.smart-var-tabs li a span', function(){ remove_node(this);});
+  $(document).on('click', '.smart-var-tabs .close', function(){ remove_node(this);});
+  fill_in_matchers();
+  $('.matchers').parents('form').on('submit', function(){
+    build_match();
+  })
+  $('.matcher_key').select2('destroy');
 })
 
 function select_first_tab(){
-  $('.lookup-keys-container').each(
-        function(i,container){
-          if ($(container).find('.smart-var-tabs li').size() > 1){
-            $(container).find('.tab-content .fields').first().addClass('active');
-            $(container).find('.smart-var-tabs li').first().addClass('active');
-            $(container).find('.smart-var-tabs li.active').find("a span").show();
-          }
-        }
-      )
-}
-
-function show_delete_button(item){
-  var container = $('.lookup-keys-container:visible');
-  container.find('.smart-var-tabs li a span:visible').hide();
-  container.find('.smart-var-tabs li.active').find("a span").show();
-
-  if($(item).hasClass('label-success') && (container.find('.smart-var-tabs li').size()>1)){
-    select_first_tab();
+  var pills = $('.lookup-keys-container:visible .smart-var-tabs li:visible');
+  if (pills.length > 0 && pills.find('.tab-error:visible').length == 0){
+    pills.find('a:visible').first().click();
   }
 }
 
 function remove_node(item){
   $($(item).parent("a").attr("href")).children('.btn-danger').click();
-  var container = $('.lookup-keys-container:visible');
-  var pills = container.find('.smart-var-tabs li a');
-  if (pills.size() > 1){
-    pills.first().parent().addClass('active');
-    pills.first().find('span').show();
+}
+
+function fix_template_context(content, context) {
+
+  // context will be something like this for a brand new form:
+  // project[tasks_attributes][new_1255929127459][assignments_attributes][new_1255929128105]
+  // or for an edit form:
+  // project[tasks_attributes][0][assignments_attributes][1]
+  if(context) {
+    var parent_names = context.match(/[a-z_]+_attributes/g) || [];
+    var parent_ids   = context.match(/(new_)?[0-9]+/g) || [];
+
+    for(var i = 0; i < parent_names.length; i++) {
+      if(parent_ids[i]) {
+        content = content.replace(
+          new RegExp('(_' + parent_names[i] + ')_.+?_', 'g'),
+          '$1_' + parent_ids[i] + '_');
+
+        content = content.replace(
+          new RegExp('(\\[' + parent_names[i] + '\\])\\[.+?\\]', 'g'),
+          '$1[' + parent_ids[i] + ']');
+      }
+    }
   }
 
+  return content;
+}
+
+function fix_template_names(content, assoc, new_id) {
+  var regexp  = new RegExp('new_' + assoc, 'g');
+  return content.replace(regexp, "new_" + new_id);
 }
 
 function add_child_node(item) {
@@ -48,49 +62,29 @@ function add_child_node(item) {
     var template_class = '.' + assoc + '_fields_template';
     var content = $(item).parent().find(template_class).html(); // Fields template
     if (content == undefined) {content = $(template_class).html()};
-
     // Make the context correct by replacing new_<parents> with the generated ID
     // of each of the parent objects
     var context = ($(item).closest('.fields').find('input:first').attr('name') || '').replace(new RegExp('\[[a-z]+\]$'), '');
-
-    // context will be something like this for a brand new form:
-    // project[tasks_attributes][new_1255929127459][assignments_attributes][new_1255929128105]
-    // or for an edit form:
-    // project[tasks_attributes][0][assignments_attributes][1]
-    if(context) {
-      var parent_names = context.match(/[a-z_]+_attributes/g) || [];
-      var parent_ids   = context.match(/(new_)?[0-9]+/g) || [];
-
-      for(var i = 0; i < parent_names.length; i++) {
-        if(parent_ids[i]) {
-          content = content.replace(
-            new RegExp('(_' + parent_names[i] + ')_.+?_', 'g'),
-            '$1_' + parent_ids[i] + '_');
-
-          content = content.replace(
-            new RegExp('(\\[' + parent_names[i] + '\\])\\[.+?\\]', 'g'),
-            '$1[' + parent_ids[i] + ']');
-        }
-      }
-    }
-
-    // Make a unique ID for the new child
-    var regexp  = new RegExp('new_' + assoc, 'g');
-    var new_id  = new Date().getTime();
-    content     = content.replace(regexp, "new_" + new_id);
+    content = fix_template_context(content, context);
+    var new_id = new Date().getTime();
+    content = fix_template_names(content, assoc, new_id);
     var field   = '';
     if (assoc == 'lookup_keys') {
-      $('#smart_vars .smart-var-tabs .active, #smart_vars .smart-var-content .active').removeClass('active');
-      var pill = "<li class='active'><a data-toggle='pill' href='#new_" + new_id + "' id='pill_new_" + new_id + "'>" + _('new') + "<span class='delete fr'>&times;</span></a></li>"
+      $('#smart_vars .smart-var-tabs .active, #smart_vars .stacked-content .active').removeClass('active');
+      var pill = "<li class='active'><a data-toggle='pill' href='#new_" + new_id + "' id='pill_new_" + new_id + "'><div class='clip'>" + __('new') + "</div><span class='close pull-right'>&times;</span></a></li>"
       $('#smart_vars .smart-var-tabs').prepend(pill);
-      field = $('#smart_vars .smart-var-content').prepend($(content).addClass('active'));
+      field = $('#smart_vars .stacked-content').prepend($(content).addClass('active').prop('id','new_'+new_id));
       $('#smart_vars .smart-var-tabs li.active a').show('highlight', 500);
+    } else if (assoc == 'lookup_values') {
+      field = $(item).parent().find('tbody').first().append($(content).find('tr'));
+      $(item).parent().find('table').removeClass('hidden');
     } else {
       field = $(content).insertBefore($(item));
     }
     $(item).closest("form").trigger({type: 'nested:fieldAdded', field: field});
     $('a[rel="popover"]').popover();
     $('a[rel="twipsy"]').tooltip();
+    activate_select2($(field).not('.matcher_key'));
     return new_id;
 }
 
@@ -102,8 +96,9 @@ function remove_child_node(item) {
 
   $(item).closest('.fields').hide();
   if($(item).parent().hasClass('fields')) {
-    var pill = $('#pill_' + $(item).closest('.fields').attr('id'));
-    var undo_link = $("<a href='#'>" +pill.html()+"</a>").attr("data-pill", "#"+pill.attr("id"));
+    var pill_id = '#pill_' + $(item).closest('.fields')[0].id;
+    var pill = $(pill_id);
+    var undo_link = $("<a href='#'>" +pill.html()+"</a>").attr("data-pill", pill_id);
 
     pill.parent().hide();
     undo_link.on('click', function(){ undo_remove_child_node(this);});
@@ -111,7 +106,12 @@ function remove_child_node(item) {
     $('.lookup-keys-container:visible').find('.undo-smart-vars').append(undo_link).show();
   }
   $(item).closest("form").trigger('nested:fieldRemoved');
+  return false;
+}
 
+function delete_child_node(item) {
+  $(item).closest('.fields').remove();
+  $(item).closest("form").trigger('nested:fieldRemoved');
   return false;
 }
 
@@ -129,10 +129,9 @@ function undo_remove_child_node(item){
   container.find('.fields.active').hide().removeClass('active');
   fields.show().addClass('active');
   link.parent().show().addClass('active');
-  show_delete_button(link);
 
   $(item).remove();
-  if (container.find('.undo-smart-vars a').size() == 0) {
+  if (container.find('.undo-smart-vars a').length == 0) {
     container.find('.undo-smart-vars').hide();
   }
   return false;
@@ -141,38 +140,76 @@ function undo_remove_child_node(item){
 function toggleOverrideValue(item) {
   var override = $(item).is(':checked');
   var fields = $(item).closest('.fields');
-  var mandatory = fields.find("[id$='_required']");
-  var type_field = fields.find("[id$='_key_type']");
-  var validator_type_field = fields.find("[id$='_validator_type']");
+  var fields_to_disable = fields.find("[name$='[required]'],[id$='_key_type'],[id$='_validator_type'],[name$='[use_puppet_default]'],[name$='[hidden_value]']");
+  var use_puppet_default = $(item).closest('fieldset').find("[id$='use_puppet_default']").is(':checked');
   var default_value_field = fields.find("[id$='_default_value']");
+  var pill_icon = $('#pill_' + fields[0].id +' i');
   var override_value_div = fields.find("[id$='lookup_key_override_value']");
-  var pill_icon = $('#pill_' + fields.attr('id') +' i');
 
-  mandatory.attr('disabled', override ? null : 'disabled');
-  type_field.attr('disabled', override ? null : 'disabled');
-  validator_type_field.attr('disabled', override ? null : 'disabled');
-  default_value_field.attr('disabled', override ? null : 'disabled' );
-  pill_icon.attr("class", override ? 'icon-flag' : "icon- ");
+  fields_to_disable.prop('disabled', !override);
+  default_value_field.prop('disabled', !override || use_puppet_default);
+  override ? pill_icon.addClass('fa-flag') : pill_icon.removeClass('fa-flag');
   override_value_div.toggle(override);
+}
+
+function changeCheckboxEnabledStatus(checkbox, shouldEnable) {
+  if (shouldEnable) {
+    $(checkbox).attr('disabled', null);
+  }
+  else {
+    $(checkbox).attr('checked', false);
+    $(checkbox).attr('disabled', 'disabled');
+  }
+}
+
+function keyTypeChange(item) {
+  var reloadedItem = $(item);
+  var keyType = reloadedItem.val();
+  var fields = reloadedItem.closest('.fields');
+  var mergeOverrides = fields.find("[id$='_merge_overrides']");
+  var avoidDuplicates = fields.find("[id$='_avoid_duplicates']");
+  var mergeDefault = fields.find("[id$='_merge_default']");
+  var validators = fields.find("[id^='optional_input_validators']");
+
+  changeCheckboxEnabledStatus(mergeOverrides, keyType == 'array' || keyType == 'hash');
+  var mergeOverrideChecked = $(mergeOverrides).attr('checked') == 'checked';
+  changeCheckboxEnabledStatus(avoidDuplicates, keyType == 'array' && mergeOverrideChecked);
+  changeCheckboxEnabledStatus(mergeDefault, mergeOverrideChecked);
+  validators.collapse('show');
+  validators.parent().find('legend').removeClass('collapsed');
+}
+
+function mergeOverridesChanged(item) {
+  var fields = $(item).closest('.fields');
+  var keyType = fields.find("[id$='_key_type']").val();
+  var avoidDuplicates = fields.find("[id$='_avoid_duplicates']");
+  var mergeDefault = fields.find("[id$='_merge_default']");
+  changeCheckboxEnabledStatus(avoidDuplicates, keyType == 'array' && item.checked);
+  changeCheckboxEnabledStatus(mergeDefault, item.checked);
+}
+
+function toggleUsePuppetDefaultValue(item, value_field) {
+  var use_puppet_default = $(item).is(':checked');
+  $(item).closest('.fields').find('[id$=' + value_field + ']').prop('disabled', use_puppet_default);
 }
 
 function filterByEnvironment(item){
   if ($(item).val()=="") {
-    $('ul.smart-var-tabs li[data-used-environments] a').removeClass('muted');
+    $('ul.smart-var-tabs li[data-used-environments] a').removeClass('hidden');
     return;
   }
   var selected = $(item).find('option:selected').text();
-  $('ul.smart-var-tabs li[data-used-environments] a').addClass('muted');
-  $('ul.smart-var-tabs li[data-used-environments*="'+selected+'"] a').removeClass('muted');
+  $('ul.smart-var-tabs li[data-used-environments] a').addClass('hidden');
+  $('ul.smart-var-tabs li[data-used-environments*="'+selected+'"] a').removeClass('hidden');
 }
 
 function filterByClassParam(item) {
   var term = $(item).val().trim();
   if (term.length > 0) {
-    $('ul.smart-var-tabs li[data-used-environments]').removeClass('search-marker').addClass('hide');
-    $('ul.smart-var-tabs li[data-used-environments] a[href*='+term+']:not(.selected-marker)').parent().addClass('search-marker').removeClass('hide');
+    $('ul.smart-var-tabs li[data-used-environments]').removeClass('search-marker').addClass('hidden');
+    $('ul.smart-var-tabs li[data-used-environments] a[href*='+term+']:not(.selected-marker)').parent().addClass('search-marker').removeClass('hidden');
   } else{
-    $('ul.smart-var-tabs li[data-used-environments]:not(.selected-marker)').addClass('search-marker').removeClass('hide');
+    $('ul.smart-var-tabs li[data-used-environments]:not(.selected-marker)').addClass('search-marker').removeClass('hidden');
   }
   return false;
 }
@@ -181,4 +218,83 @@ function validatorTypeSelected(item){
   var validatorType = $(item).val();
   var validator_rule_field = $(item).closest('.fields').find("[id$='_validator_rule']");
   validator_rule_field.attr('disabled', validatorType == "" ? 'disabled' : null);
+}
+
+const KEY_DELM = ",";
+const EQ_DELM  = "=";
+
+function match_to_key_value(match){
+  var regex = new RegExp('[' + KEY_DELM + EQ_DELM + ']');
+
+  var keys = [], values = [],
+  split_matcher = match.replace(/(\s+,) | (,\s+)/g, '').split(regex);
+
+  $.each(split_matcher, function (index, value) {
+    if (index % 2 === 0) {
+      keys.push(value);
+    } else {
+      values.push(value);
+    }
+  });
+
+  return [keys.join(KEY_DELM), values.join(KEY_DELM)];
+}
+
+function key_value_to_match(keys, values){
+  var match = "";
+  keys.split(KEY_DELM).forEach(function (el, index) {
+   match += el + EQ_DELM + values.split(KEY_DELM)[index] + KEY_DELM;
+  });
+
+  return match.slice(0, -1);
+}
+
+function fill_in_matchers(){
+  $('.matchers').each(function () {
+    var matcher = $(this);
+    var match = matcher.find('.match').val();
+    var matcher_key = matcher.find('.matcher_key');
+    var matcher_value = matcher.find('.matcher_value');
+    var order = matcher.closest('.matcher-parent').find('#order').val().split('\n');
+    matcher_key.empty();
+    matcher_key.append("<option></option>");
+    $.each(order, function (index, value) {
+      matcher_key.append($("<option>", {value: _.escape(value), html: _.escape(value)}));
+    });
+    if (match) {
+      var key_value = match_to_key_value(match);
+      matcher_key.find("option[value='" + key_value[0] + "']").attr('selected', 'selected');
+      matcher_value.val(key_value[1]);
+    }
+  });
+}
+
+function build_match() {
+  $('.matchers').each(function () {
+    var match = $(this).find('.match');
+    var matcher_key = $(this).find('.matcher_key');
+    var matcher_value = $(this).find('.matcher_value');
+    match.val(key_value_to_match(matcher_key.val(), matcher_value.val()));
+  });
+}
+
+function toggle_lookupkey_hidden(checkbox) {
+  var default_value = $('#'+checkbox.id.replace(/hidden_value$/, "default_value"));
+  var lookup_values = $(checkbox).closest('.fields').find('.lookup_values [id$="value"]');
+  toggle_value_hidden(default_value);
+  lookup_values.each(function () {
+    toggle_value_hidden($(this));
+  });
+}
+
+function toggle_value_hidden(target){
+  var shown = !target.hasClass('masked-input');
+  target.closest('tr').find('.set_hidden_value').prop('checked', shown);
+  target.toggleClass('masked-input');
+}
+
+function input_group_hidden(btn) {
+  target = $(btn).closest('.input-group').find('textarea, input');
+  toggle_value_hidden(target);
+  $(btn).hide().siblings('.btn-hide').show();
 }

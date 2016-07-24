@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::HostgroupsControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => 'TestHostgroup' }
 
   test "should get index" do
@@ -23,19 +22,34 @@ class Api::V2::HostgroupsControllerTest < ActionController::TestCase
     assert_difference('Hostgroup.count') do
       post :create, { :hostgroup => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update hostgroup" do
-    put :update, { :id => hostgroups(:common).to_param, :hostgroup => { } }
+    put :update, { :id => hostgroups(:common).to_param, :hostgroup => valid_attrs }
     assert_response :success
   end
 
   test "should destroy hostgroups" do
     assert_difference('Hostgroup.count', -1) do
-      delete :destroy, { :id => hostgroups(:common).to_param }
+      delete :destroy, { :id => hostgroups(:unusual).to_param }
     end
     assert_response :success
+  end
+
+  test "should clone hostgroup" do
+    assert_difference('Hostgroup.count') do
+      post :clone, { :id => hostgroups(:common).to_param, :name => Time.now.utc.to_s }
+    end
+    assert_response :success
+  end
+
+  test "blocks API deletion of hosts with children" do
+    assert hostgroups(:parent).has_children?
+    assert_no_difference('Hostgroup.count') do
+      delete :destroy, { :id => hostgroups(:parent).to_param }
+    end
+    assert_response :conflict
   end
 
   test "should create nested hostgroup with a parent" do
@@ -52,4 +66,18 @@ class Api::V2::HostgroupsControllerTest < ActionController::TestCase
     assert_equal hostgroups(:common).id.to_s, Hostgroup.find_by_name("db").ancestry
   end
 
+  test "user without view_params permission can't see hostgroup parameters" do
+    setup_user "view", "hostgroups"
+    hostgroup_with_parameter = FactoryGirl.create(:hostgroup, :with_parameter)
+    get :show, {:id => hostgroup_with_parameter.to_param, :format => 'json'}
+    assert_empty JSON.parse(response.body)['parameters']
+  end
+
+  test "user with view_params permission can see hostgroup parameters" do
+    setup_user "view", "hostgroups"
+    setup_user "view", "params"
+    hostgroup_with_parameter = FactoryGirl.create(:hostgroup, :with_parameter)
+    get :show, {:id => hostgroup_with_parameter.to_param, :format => 'json'}
+    assert_not_empty JSON.parse(response.body)['parameters']
+  end
 end

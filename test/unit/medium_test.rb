@@ -2,7 +2,7 @@ require 'test_helper'
 
 class MediumTest < ActiveSupport::TestCase
   setup do
-    User.current = User.find_by_login "admin"
+    User.current = users :admin
     disable_orchestration
   end
 
@@ -12,16 +12,11 @@ class MediumTest < ActiveSupport::TestCase
     assert !medium.save
   end
 
-  test "name can't contain white spaces" do
+  test "name strips leading and trailing white spaces" do
     medium = Medium.new :name => "   Archlinux mirror   thing   ", :path => "http://www.google.com"
-    assert !medium.name.squeeze(" ").empty?
-    assert !medium.save
-
-    medium.name = "Archlinux mirror      thing"
-    assert !medium.save
-
-    medium.name.squeeze!(" ")
-    assert medium.save!
+    assert medium.save
+    refute medium.name.starts_with?(' ')
+    refute medium.name.ends_with?(' ')
   end
 
   test "name must be unique" do
@@ -32,93 +27,58 @@ class MediumTest < ActiveSupport::TestCase
     assert !other_medium.save
   end
 
-  test "path can't be blank" do
-    medium = Medium.new :name => "Archlinux mirror", :path => "  "
-    assert medium.path.strip.empty?
-    assert !medium.save
+  context 'path validations' do
+    setup do
+      @medium = FactoryGirl.build(:medium)
+    end
+
+    test "can't be blank" do
+      @medium.path = '  '
+      assert @medium.path.strip.empty?
+      refute_valid @medium
+    end
+
+    test 'must be unique' do
+      @medium.path = 'http://www.google.com'
+      assert @medium.save!
+
+      other_medium = FactoryGirl.build(:medium, :path => @medium.path)
+      refute_valid other_medium
+    end
   end
 
-  test "path must be unique" do
+  test "should destroy and nullify host.medium_id if medium is in use but host.build? is false" do
     medium = Medium.new :name => "Archlinux mirror", :path => "http://www.google.com"
     assert medium.save!
 
-    other_medium = Medium.new :name => "Ubuntu mirror", :path => "http://www.google.com"
-    assert !other_medium.save
-  end
-
-  test "should not destroy while using" do
-    medium = Medium.new :name => "Archlinux mirror", :path => "http://www.google.com"
-    assert medium.save!
-
-    host = hosts(:one)
+    host = FactoryGirl.create(:host, :with_operatingsystem)
+    refute host.build?
     host.medium = medium
-    host.os.media << medium
+    host.operatingsystem.media << medium
     assert host.save!
 
     medium.hosts << host
 
-    assert !medium.destroy
+    assert medium.destroy
+    host.reload
+    assert host.medium.nil?
   end
 
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_media"
-      role.permissions = ["#{operation}_media".to_sym]
-      @one.roles = [role]
-      @one.save!
-    end
-    User.current = @one
-  end
+  test "should not destroy if medium has hosts that are in build mode" do
+    medium = Medium.new :name => "Archlinux mirror", :path => "http://www.google.com"
+    assert medium.save!
 
-  test "user with create permissions should be able to create" do
-    setup_user "create"
-    record =  Medium.create :name => "dummy", :path => "http://hello"
-    assert record.valid?
-    assert !record.new_record?
-  end
+    host = FactoryGirl.create(:host, :with_operatingsystem, :managed)
+    host.build = true
+    host.medium = medium
+    host.operatingsystem.media << medium
+    assert host.save!
 
-  test "user with view permissions should not be able to create" do
-    setup_user "view"
-    record =  Medium.create :name => "dummy", :path => "http://hello"
-    assert record.valid?
-    assert record.new_record?
-  end
+    medium.hosts << host
 
-  test "user with destroy permissions should be able to destroy" do
-    setup_user "destroy"
-    record =  Medium.first
-    as_admin do
-      record.hosts.delete_all
-      record.hostgroups.delete_all
-      assert record.destroy
-    end
-    assert record.frozen?
-  end
-
-  test "user with edit permissions should not be able to destroy" do
-    setup_user "edit"
-    record =  Medium.first
-    assert !record.destroy
-    assert !record.frozen?
-  end
-
-  test "user with edit permissions should be able to edit" do
-    setup_user "edit"
-    record      =  Medium.first
-    record.name = "renamed"
-    assert record.save
-  end
-
-  test "user with destroy permissions should not be able to edit" do
-    setup_user "destroy"
-    record      =  Medium.first
-    record.name = "renamed"
-    as_admin do
-      record.hosts.delete_all
-    end
-    assert !record.save
-    assert record.valid?
+    refute medium.destroy
+    host.reload
+    assert_equal medium, host.medium
   end
 
   test "os family can be one of defined os families" do
@@ -145,5 +105,4 @@ class MediumTest < ActiveSupport::TestCase
     medium = Medium.new :name => "dummy", :path => "http://hello", :os_family => ""
     assert_equal nil, medium.os_family
   end
-
 end

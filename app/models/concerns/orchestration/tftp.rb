@@ -2,19 +2,70 @@ module Orchestration::TFTP
   extend ActiveSupport::Concern
 
   included do
-    after_validation :validate_tftp, :queue_tftp
+    after_validation :validate_tftp, :unless => :skip_orchestration?
+    after_validation :queue_tftp
     before_destroy :queue_tftp_destroy
 
     # required for pxe template url helpers
     include Rails.application.routes.url_helpers
+    register_rebuild(:rebuild_tftp, N_('TFTP'))
   end
 
   def tftp?
-    !!(subnet and subnet.tftp?) and (operatingsystem and operatingsystem.pxe_variant) and managed? and capabilities.include?(:build)
+    # host.managed? and managed? should always come first so that orchestration doesn't
+    # even get tested for such objects
+    (host.nil? || host.managed?) && managed && provision? && !!(subnet && subnet.tftp?) && (host && host.operatingsystem && host.operatingsystem.pxe_variant) && pxe_build? && SETTINGS[:unattended]
   end
 
   def tftp
-    subnet.tftp_proxy(:variant => operatingsystem.pxe_variant) if tftp?
+    subnet.tftp_proxy(:variant => host.operatingsystem.pxe_variant) if tftp?
+  end
+
+  def rebuild_tftp
+    if tftp?
+      begin
+        setTFTP
+      rescue => e
+        Foreman::Logging.exception "Failed to rebuild TFTP record for #{name}, #{ip}", e, :level => :error
+        false
+      end
+    else
+      logger.info "TFTP not supported for #{name}, #{ip}, skipping orchestration rebuild"
+      true
+    end
+  end
+
+  def generate_pxe_template
+    # this is the only place we generate a template not via a web request
+    # therefore some workaround is required to "render" the template.
+    @kernel = host.operatingsystem.kernel(host.arch)
+    @initrd = host.operatingsystem.initrd(host.arch)
+    if host.operatingsystem.respond_to?(:mediumpath)
+      @mediapath = host.operatingsystem.mediumpath(host)
+    end
+
+    # Xen requires additional boot files.
+    if host.operatingsystem.respond_to?(:xen)
+      @xen = host.operatingsystem.xen(host.arch)
+    end
+
+    # work around for ensuring that people can use @host as well, as tftp templates were usually confusing.
+    @host = self.host
+    if build?
+      template = host.provisioning_template({:kind => host.operatingsystem.template_kind})
+      failure_missing_template unless template
+      template_name = template.name
+    else
+      if host.operatingsystem.template_kind == "PXEGrub"
+        template_name = "PXEGrub default local boot"
+      else
+        template_name = "PXELinux default local boot"
+      end
+      template = ProvisioningTemplate.find_by_name(template_name)
+    end
+    unattended_render template, template_name
+  rescue => e
+    failure _("Failed to generate %{template_kind} template %{template_name}: %{e}") % { :template_kind => host.operatingsystem.template_kind, :template_name => template_name.nil? ? '' : template_name, :e => e }, e
   end
 
   protected
@@ -22,33 +73,27 @@ module Orchestration::TFTP
   # Adds the host to the forward and reverse TFTP zones
   # +returns+ : Boolean true on success
   def setTFTP
-    logger.info "Add the TFTP configuration for #{name}"
+    logger.info "Add the TFTP configuration for #{host.name}"
     tftp.set mac, :pxeconfig => generate_pxe_template
-  rescue => e
-    failure _("Failed to set TFTP: %s") % proxy_error(e)
   end
 
   # Removes the host from the forward and reverse TFTP zones
   # +returns+ : Boolean true on success
   def delTFTP
-    logger.info "Delete the TFTP configuration for #{name}"
+    logger.info "Delete the TFTP configuration for #{host.name}"
     tftp.delete mac
-  rescue => e
-    failure _("Failed to delete TFTP: %s") % proxy_error(e)
   end
 
   def setTFTPBootFiles
-    logger.info "Fetching required TFTP boot files for #{name}"
+    logger.info "Fetching required TFTP boot files for #{host.name}"
     valid = true
-    operatingsystem.pxe_files(medium, architecture).each do |bootfile_info|
+    host.operatingsystem.pxe_files(host.medium, host.architecture, host).each do |bootfile_info|
       for prefix, path in bootfile_info do
         valid = false unless tftp.fetch_boot_file(:prefix => prefix.to_s, :path => path)
       end
     end
     failure _("Failed to fetch boot files") unless valid
     valid
-  rescue => e
-    failure _("Failed to fetch boot files: %s") % proxy_error(e)
   end
 
   #empty method for rollbacks
@@ -57,41 +102,26 @@ module Orchestration::TFTP
 
   private
 
-  def validate_tftp
-    return unless tftp?
-    return unless operatingsystem
-    return if Rails.env == "test"
-    if configTemplate({:kind => operatingsystem.template_kind}).nil? and configTemplate({:kind => "gPXE"}).nil?
-      failure _("No %{template_kind} templates were found for this host, make sure you define at least one in your %{os} settings") % { :template_kind => operatingsystem.template_kind, :os => os }
-    end
+  def template_kind_missing?(kind = host.operatingsystem.template_kind)
+    host.provisioning_template({:kind => kind}).nil?
   end
 
-  def generate_pxe_template
-    # this is the only place we generate a template not via a web request
-    # therefore some workaround is required to "render" the template.
+  def failure_missing_template
+    failure _("No %{template_kind} templates were found for this host, make sure you define at least one in your %{os} settings") %
+      { :template_kind => host.operatingsystem.template_kind, :os => host.operatingsystem }
+  end
 
-    prefix   = operatingsystem.pxe_prefix(arch)
-    @kernel = os.kernel(arch)
-    @initrd = os.initrd(arch)
-    # work around for ensuring that people can use @host as well, as tftp templates were usually confusing.
-    @host = self
-    if build?
-      pxe_render configTemplate({:kind => os.template_kind}).template
-    else
-      if os.template_kind == "PXEGrub"
-        pxe_render ConfigTemplate.find_by_name("PXEGrub Localboot Default").template
-      else
-        pxe_render ConfigTemplate.find_by_name("PXE Localboot Default").template
-      end
-    end
-  rescue => e
-    failure _("Failed to generate %{template_kind} template: %{e}") % { :template_kind => os.template_kind, :e => e }
+  def validate_tftp
+    return unless tftp?
+    return unless host.operatingsystem
+    return if Rails.env == "test"
+    failure_missing_template if (template_kind_missing? && template_kind_missing?("iPXE"))
   end
 
   def queue_tftp
-    return unless tftp? and errors.empty?
+    return unless tftp? && no_errors
     # Jumpstart builds require only minimal tftp services. They do require a tftp object to query for the boot_server.
-    return true if jumpstart?
+    return true if host.jumpstart?
     new_record? ? queue_tftp_create : queue_tftp_update
   end
 
@@ -106,11 +136,11 @@ module Orchestration::TFTP
   def queue_tftp_update
     set_tftp = false
     # we switched build mode
-    set_tftp = true unless old.build? != build?
+    set_tftp = true if old.host.build? != host.build?
     # medium or arch changed
-    set_tftp = true if old.medium != medium or old.arch != arch
+    set_tftp = true if old.host.medium.try(:id) != host.medium.try(:id) || old.host.arch.try(:id) != host.arch.try(:id)
     # operating system changed
-    set_tftp = true if os and old.os and (old.os.name != os.name or old.os != os)
+    set_tftp = true if host.operatingsystem && old.host.operatingsystem && (old.host.operatingsystem.name != host.operatingsystem.name || old.host.operatingsystem.try(:id) != host.operatingsystem.try(:id))
     # MAC address changed
     if mac != old.mac
       set_tftp = true
@@ -120,14 +150,17 @@ module Orchestration::TFTP
                      :action => [old, :delTFTP])
       end
     end
-    queue_tftp_create  if set_tftp
+    queue_tftp_create if set_tftp
   end
 
   def queue_tftp_destroy
-    return unless tftp? and errors.empty?
-    return true if jumpstart?
+    return unless tftp? && no_errors
+    return true if host.jumpstart?
     queue.create(:name => _("TFTP Settings for %s") % self, :priority => 20,
                  :action => [self, :delTFTP])
   end
 
+  def no_errors
+    errors.empty? && host.errors.empty?
+  end
 end

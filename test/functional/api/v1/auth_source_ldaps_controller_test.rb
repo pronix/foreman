@@ -1,8 +1,7 @@
 require 'test_helper'
 
 class Api::V1::AuthSourceLdapsControllerTest < ActionController::TestCase
-
-  valid_attrs = { :name => 'ldap2', :host => 'ldap2' }
+  valid_attrs = { :name => 'ldap2', :host => 'ldap2', :server_type => 'posix' }
 
   test "should get index" do
     get :index, { }
@@ -27,7 +26,7 @@ class Api::V1::AuthSourceLdapsControllerTest < ActionController::TestCase
   end
 
   test "should update auth_source_ldap" do
-    put :update, { :id => auth_sources(:one).to_param, :auth_source_ldap => { } }
+    put :update, { :id => auth_sources(:one).to_param, :auth_source_ldap => { :host => "ldap3" } }
     assert_response :success
   end
 
@@ -39,5 +38,4 @@ class Api::V1::AuthSourceLdapsControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

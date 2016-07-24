@@ -17,14 +17,15 @@ class SettingsControllerTest < ActionController::TestCase
   end
 
   test "can render a new sti type setting" do
-    class Setting::Valid < Setting ; end
+    class Setting::Valid < Setting; end
     assert Setting.create(:name => "foo", :default => "bar", :description => "test foo", :category => "Setting::Valid")
     get :index, {}, set_session_user
     assert_match /id='Valid'/, @response.body
   end
 
   test "does not render an old sti type setting" do
-    assert Setting.create(:name => "foo", :default => "bar", :description => "test foo", :category => "Setting::Invalid")
+    assert setting = Setting.create(:name => "foo", :default => "bar", :description => "test foo")
+    setting.send(:write_attribute, :category, "Setting::Invalid")
     get :index, {}, set_session_user
     assert_no_match /id='Invalid'/, @response.body
   end
@@ -35,4 +36,19 @@ class SettingsControllerTest < ActionController::TestCase
     assert :unprocessable_entity
   end
 
+  test "settings shouldnt include ones about organizations when organizations are disabled" do
+    SETTINGS[:organizations_enabled] = false
+    get :index, {}, set_session_user
+    assert_no_match /default_organization/, @response.body
+    assert_no_match /organization_fact/, @response.body
+    SETTINGS[:organizations_enabled] = true
+  end
+
+  test "settings shouldnt include ones about locations when locations are disabled" do
+    SETTINGS[:locations_enabled] = false
+    get :index, {}, set_session_user
+    assert_no_match /default_location/, @response.body
+    assert_no_match /location_fact/, @response.body
+    SETTINGS[:locations_enabled] = true
+  end
 end

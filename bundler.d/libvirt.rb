@@ -1,3 +1,4 @@
 group :libvirt do
-  gem "ruby-libvirt", :require => 'libvirt'
+  gem 'fog-libvirt', '>= 0.0.2', '< 1.0'
+  gem 'ruby-libvirt', '~> 0.5', :require => 'libvirt'
 end

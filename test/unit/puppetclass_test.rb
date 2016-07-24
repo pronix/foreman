@@ -2,109 +2,39 @@ require 'test_helper'
 
 class PuppetclassTest < ActiveSupport::TestCase
   setup do
-    User.current = User.find_by_login "admin"
+    User.current = users :admin
   end
 
-  test "name can't be blank" do
-    puppet_class = Puppetclass.new
-    assert !puppet_class.save
-  end
+  should validate_presence_of(:name)
+  should validate_uniqueness_of(:name)
 
-  test "name can't contain trailing white spaces" do
-    puppet_class = Puppetclass.new :name => "   test     class   "
-    assert !puppet_class.name.squeeze(" ").empty?
-    assert !puppet_class.save
-
-    puppet_class.name.squeeze!(" ")
+  test "name strips leading and trailing white spaces" do
+    puppet_class = Puppetclass.new :name => "   testclass   "
     assert puppet_class.save
-  end
-
-  test "name must be unique" do
-    puppet_class = Puppetclass.new :name => "test class"
-    assert puppet_class.save
-
-    other_puppet_class = Puppetclass.new :name => "test class"
-    assert !other_puppet_class.save
-  end
-
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_puppetclasses"
-      role.permissions = ["#{operation}_puppetclasses".to_sym]
-      @one.roles = [role]
-      @one.save!
-    end
-    User.current = @one
-  end
-
-  test "user with create permissions should be able to create" do
-    setup_user "create"
-    record =  Puppetclass.create :name => "dummy"
-    assert record.valid?
-    assert !record.new_record?
-  end
-
-  test "user with view permissions should not be able to create" do
-    setup_user "view"
-    record =  Puppetclass.create :name => "dummy"
-    assert record.valid?
-    assert record.new_record?
-  end
-
-  test "user with destroy permissions should be able to destroy" do
-    setup_user "destroy"
-    record =  Puppetclass.first
-    as_admin do
-      record.hosts.destroy_all
-      record.lookup_keys.destroy_all
-    end
-    assert record.destroy
-    assert record.frozen?
-  end
-
-  test "user with edit permissions should not be able to destroy" do
-    setup_user "edit"
-    record =  Puppetclass.first
-    assert !record.destroy
-    assert !record.frozen?
-  end
-
-  test "user with edit permissions should be able to edit" do
-    setup_user "edit"
-    record      =  Puppetclass.first
-    record.name = "renamed"
-    assert record.save
-  end
-
-  test "user with destroy permissions should not be able to edit" do
-    setup_user "destroy"
-    record      =  Puppetclass.first
-    record.name = "renamed"
-    as_admin do
-      record.hosts.destroy_all
-    end
-    assert !record.save
-    assert record.valid?
+    refute puppet_class.name.ends_with?(' ')
+    refute puppet_class.name.starts_with?(' ')
   end
 
   test "looking for a nonexistent host returns no puppetclasses" do
     assert_equal [], Puppetclass.search_for("host = imaginaryhost.nodomain.what")
   end
 
-  test "user without create external_variables permission cannot create smart variable for puppetclass" do
-    setup_user "edit"
-    nested_lookup_key_params = {:new_1372154591368 => {:key=>"test_param", :key_type=>"string", :default_value => "7777", :path =>"fqdn\r\nhostgroup\r\nos\r\ndomain"}}
-    refute Puppetclass.first.update_attributes(:lookup_keys_attributes => nested_lookup_key_params)
-  end
-
   test "user with create external_variables permission can create smart variable for puppetclass" do
     @one = users(:one)
     # add permission for user :one
     as_admin do
-      role = Role.find_or_create_by_name :name => "testing_role"
-      role.permissions = [:edit_puppetclasses, :create_external_variables]
-      @one.roles = [role]
+      filter1 = FactoryGirl.build(:filter)
+      filter1.permissions = Permission.where(:name => ['create_external_variables'])
+      filter2 = FactoryGirl.build(:filter)
+      filter2.permissions = Permission.where(:name => ['edit_puppetclasses'])
+      role = Role.where(:name => "testing_role").first_or_create
+      role.filters = [ filter1, filter2 ]
+      role.save!
+      filter1.role = role
+      filter1.save!
+      filter2.role = role
+      filter2.save!
+      @one.roles = [ role ]
       @one.save!
     end
     as_user :one do
@@ -135,4 +65,120 @@ class PuppetclassTest < ActiveSupport::TestCase
     assert_equal "Puppetclass", "puppetclasses".classify
   end
 
+  context "all_hostgroups should show hostgroups and their descendants" do
+    setup do
+      @class = FactoryGirl.create(:puppetclass)
+      @hg1 = FactoryGirl.create(:hostgroup)
+      @hg2 = FactoryGirl.create(:hostgroup, :parent_id => @hg1.id)
+      @hg3 = FactoryGirl.create(:hostgroup, :parent_id => @hg2.id)
+      @config_group = FactoryGirl.create(:config_group)
+      @hg1.config_groups << @config_group
+    end
+
+    it "when added directly" do
+      assert_difference('@class.all_hostgroups.count', 3) do
+        @class.hostgroups << @hg1
+      end
+    end
+
+    it "when added directly and called without descendants" do
+      assert_difference('@class.all_hostgroups(false).count', 1) do
+        @class.hostgroups << @hg1
+      end
+    end
+
+    it "when added via config group" do
+      assert_difference('@class.all_hostgroups.count', 3) do
+        @class.config_groups << @config_group
+      end
+    end
+
+    it "when added directly and called without descendants" do
+      assert_difference('@class.all_hostgroups(false).count', 1) do
+        @class.config_groups << @config_group
+      end
+    end
+  end
+
+  context "host counting" do
+    setup do
+      @env = FactoryGirl.create(:environment)
+      @class = FactoryGirl.create(:puppetclass)
+      @parent_hg = FactoryGirl.create(:hostgroup)
+      @hostgroup = FactoryGirl.create(:hostgroup, :parent => @parent_hg)
+      @config_group = FactoryGirl.create(:config_group, :puppetclasses => [@class])
+      @host = FactoryGirl.create(:host, :environment => @env)
+    end
+
+    test "correctly counts direct hosts" do
+      @host.puppetclasses << @class
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "correctly counts hosts via config group" do
+      @host.config_groups << @config_group
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "correctly counts hosts via hostgroup" do
+      @hostgroup.puppetclasses << @class
+      @host.update_attribute(:hostgroup_id, @hostgroup.id)
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "correctly counts hosts via parent hostgroup" do
+      @host.update_attribute(:hostgroup_id, @hostgroup.id)
+      @parent_hg.puppetclasses << @class
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "correctly counts hosts via hostgroup config group" do
+      @host.update_attribute(:hostgroup_id, @hostgroup.id)
+      @hostgroup.config_groups << @config_group
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "correctly counts hosts via parent hostgroup config group" do
+      @host.update_attribute(:hostgroup_id, @hostgroup.id)
+      @parent_hg.config_groups << @config_group
+      assert_equal 1, @class.hosts_count
+    end
+
+    test "only count host once even if it has multiple connections to puppetclass" do
+      @host.puppetclasses << @class
+      @host.config_groups << @config_group
+      @hostgroup.puppetclasses << @class
+      @hostgroup.config_groups << @config_group
+      @parent_hg.puppetclasses << @class
+      @parent_hg.config_groups << @config_group
+      @host.update_attribute(:hostgroup_id, @hostgroup.id)
+      assert_equal 1, @class.hosts_count
+    end
+  end
+
+  test "three levels of nested attributes still validate nested objects" do
+    klass = FactoryGirl.create(:puppetclass)
+    hostgroup = FactoryGirl.create(:hostgroup)
+    lk = FactoryGirl.create(:variable_lookup_key, puppetclass_id: klass.id)
+    attributes = {"hostgroup_ids"=>[hostgroup.id],
+      "lookup_keys_attributes"=>
+      {"0"=>
+        { "_destroy"=>"false",
+          "key"=>"hahs",
+          "description"=>"",
+          "key_type"=>"hash",
+          "default_value"=>"{\"foo\" => \"bar\"}",
+          "hidden_value"=>"0",
+          "validator_type"=>"",
+          "path"=>"owner\r\nfqdn\r\nhostgroup\r\nos\r\ndomain",
+          "merge_overrides"=>"0",
+          "lookup_values_attributes"=>{"0"=>{"match"=>"owner=sdgsd", "value"=>"{\"foo\" => \"bar\"}", "_destroy"=>"false"}},
+          "id"=>lk.id
+        }
+      }
+    }
+
+    refute klass.update_attributes(attributes)
+    assert klass.errors.messages.keys.include?(:"lookup_keys.lookup_values.value")
+  end
 end

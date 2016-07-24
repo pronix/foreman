@@ -1,12 +1,34 @@
-$(document).on('click', ".table-two-pane td", function(e) {
-  var item = $(this).find("a[href$='edit']");
-  if(item.length){
+var disabled_tabs = [];
+
+var original_tab_fn = $.fn.tab;
+$.fn.tab = function ( option ) {
+  if(disabled_tabs.indexOf($(this).get(0)) < 0) {
+      original_tab_fn.call(this, option);
+  }
+}
+
+$(document).on('click', ".table-two-pane .display-two-pane a", function(e) {
+  if ($('.table-two-pane').length) {
     e.preventDefault();
-    two_pane_open(item);
+    two_pane_open(this);
   }
 });
 
 $(document).on('click', "#title_action a[href$='new']", function(e) {
+  if ($('.table-two-pane').length && $(this).data('target') != 'full-page') {
+    e.preventDefault();
+    two_pane_open(this);
+  }
+});
+
+$(document).on('click', "a[href$='new'].new_two_pane", function(e) {
+  if ($('.table-two-pane').length) {
+    e.preventDefault();
+    two_pane_open(this);
+  }
+});
+
+$(document).on('click', "a[href$='edit'].edit_two_pane", function(e) {
   if ($('.table-two-pane').length) {
     e.preventDefault();
     two_pane_open(this);
@@ -26,6 +48,9 @@ $(document).on('click', ".two-pane-close", function(e) {
 // open the new/edit from in the right pane
 function two_pane_open(item){
   hide_columns();
+
+  disabled_tabs = $('ul.nav-tabs li a').toArray();
+  $('ul.nav-tabs li').not(".active").addClass('disabled');
   $('td.active').removeClass('active');
   $(item).parent('td').addClass('active');
 
@@ -33,10 +58,13 @@ function two_pane_open(item){
   $.ajax({
     type:'GET',
     url: href,
+    headers: {"X-Foreman-Layout": "two-pane"},
     success: function(response){
+      foreman.tools.hideSpinner();
       right_pane_content(response);
     },
     error: function(response){
+      foreman.tools.hideSpinner();
       $('#content').html(response.responseText);
     }
   });
@@ -49,10 +77,24 @@ function two_pane_submit(){
   $("body").css("cursor", "progress");
 
   var url = $('.two-pane-right form').attr('action');
+  var data;
+  if (!("FormData" in window)) {
+    data = $('.two-pane-right form').serialize();
+    content_type = 'application/x-www-form-urlencoded; charset=UTF-8';
+    process_data = true;
+  } else {
+    data = new FormData($('.two-pane-right form')[0]);
+    content_type = false;
+    process_data = false;
+  }
+
   $.ajax({
     type:'POST',
     url: url,
-    data: $('form').serialize(),
+    headers: {"X-Foreman-Layout": "two-pane"},
+    data: data,
+    processData: process_data,
+    contentType: content_type,
     success: function(response){
       right_pane_content(response);
     },
@@ -68,6 +110,8 @@ function two_pane_submit(){
 
 // show all the table columns and remove the two-pane structure
 function two_pane_close(){
+  $('ul.nav-tabs li').removeClass('disabled');
+  $disabled_tabs = [];
   $('td.active').removeClass('active');
   $('.two-pane-right').remove();
   $('.table-two-pane tr td').show();
@@ -89,23 +133,19 @@ function hide_columns(){
   $('.two-pane-right').remove();
   $('.pagination').hide();
   if ($('.two-pane-left').length == 0){
-    $('.table-two-pane').wrap( "<div class='row'><div class='span3 two-pane-left'></div></div>");
+    $('.table-two-pane').wrap( "<div class='row'><div class='col-md-3 two-pane-left'></div></div>");
   }
-  var placeholder = spinner_placeholder(_('Loading'));
-  $('.two-pane-left').after("<div class='span9 two-pane-right'><div class='well'>" + placeholder + "</div></div>");
-
+  foreman.tools.showSpinner();
+  $('.two-pane-left').after("<div class='col-md-9 two-pane-right'></div>");
 }
 
 // place the content into the right pane
 function right_pane_content(response){
   if (handle_redirect(response)) return; //session expired redirect to login
 
-  var form_content = $("#content form.well", response);
-  if (form_content.length){
-    $('.two-pane-right').html(form_content);
-    $('.two-pane-right form').removeClass('form-horizontal');
+  if (!$("#content", response).length){
+    $('.two-pane-right').html(response);
     $('.two-pane-right form').prepend("<div class='fr close-button'><a class='two-pane-close' href='#'>&times;</a></div>");
-    $('.form-actions div').addClass('pull-right');
     $('.form-actions a').addClass('two-pane-close');
     fix_multi_checkbox();
   } else {
@@ -116,7 +156,7 @@ function right_pane_content(response){
 }
 
 function fix_multi_checkbox(){
-  $('.two-pane-right .icon-check').parents('.control-group').each(function(){
+  $('.two-pane-right .glyphicon-icon-check').parents('.form-group').each(function(){
     var label = $(this).find('.control-label').hide().text();
     $(this).find('a').append(label).addClass('select-all');
   })
@@ -124,10 +164,10 @@ function fix_multi_checkbox(){
 
 // clear form errors classes.
 function clear_errors(){
-  $('.error .help-inline').hide();
+  $('.error .help-block').hide();
   $('.error').removeClass('error');
   $('.tab-error').removeClass('tab-error');
-  $('.alert-error').remove();
+  $('.alert-danger').remove();
 }
 
 // when ajax call hit a session time out it should handle the redirect to login correctly.

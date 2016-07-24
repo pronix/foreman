@@ -1,10 +1,10 @@
 class CreateNotices < ActiveRecord::Migration
-  def self.up
+  def up
     # These are notice messages
     create_table :notices do |t|
       t.string  :content, :null => false, :limit => 1024
       t.boolean :global,  :null => false, :default => true
-      t.string  :level,   :null => false
+      t.string  :level,   :null => false, :limit => 255
       t.timestamps
     end
     # Global messages have to be acknowledged by every user individually
@@ -14,7 +14,7 @@ class CreateNotices < ActiveRecord::Migration
     end
   end
 
-  def self.down
+  def down
     drop_table :user_notices
     drop_table :notices
   end

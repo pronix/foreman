@@ -1,14 +1,15 @@
 class PuppetClassImporter
-
-  def initialize args = { }
+  def initialize(args = { })
     @foreman_classes = { }
     @proxy_classes   = { }
+    @environment = args[:env]
+
     if args[:proxy]
       @proxy = args[:proxy]
     elsif args[:url]
       @proxy = ProxyAPI::Puppet.new(:url => args[:url])
     else
-      url = SmartProxy.puppet_proxies.first.try(:url)
+      url = SmartProxy.with_features("Puppet").first.try(:url)
       raise "Can't find a valid Proxy with a Puppet feature" if url.blank?
       @proxy = ProxyAPI::Puppet.new(:url => url)
     end
@@ -18,18 +19,28 @@ class PuppetClassImporter
   def changes
     changes = { 'new' => { }, 'obsolete' => { }, 'updated' => { } }
 
-    actual_environments.each do |env|
+    if @environment.nil?
+      actual_environments.each do |env|
+        new     = new_classes_for(env)
+        old     = removed_classes_for(env)
+        updated = updated_classes_for(env)
+        changes['new'][env] = new if new.any?
+        changes['obsolete'][env] = old if old.any?
+        changes['updated'][env] = updated if updated.any?
+      end
+
+      old_environments.each do |env|
+        changes['obsolete'][env] ||= []
+        changes['obsolete'][env] << "_destroy_" unless actual_environments.include?(env)
+      end
+    else
+      env = @environment
       new     = new_classes_for(env)
       old     = removed_classes_for(env)
       updated = updated_classes_for(env)
       changes['new'][env] = new if new.any?
       changes['obsolete'][env] = old if old.any?
       changes['updated'][env] = updated if updated.any?
-    end
-
-    old_environments.each do |env|
-      changes['obsolete'][env] ||= []
-      changes['obsolete'][env] << "_destroy_" unless actual_environments.include?(env)
     end
     changes
   end
@@ -41,16 +52,16 @@ class PuppetClassImporter
   # +changed+ : Hash with two keys: :new and :obsolete.
   #               changed[:/new|obsolete/] is and Array of Strings
   # Returns   : Array of Strings containing all record errors
-  def obsolete_and_new changes = { }
+  def obsolete_and_new(changes = { })
     return if changes.empty?
     changes.values.map(&:keys).flatten.uniq.each do |env_name|
-      if changes['new'] and changes['new'][env_name].try(:>, '') # we got new classes
+      if changes['new'] && changes['new'][env_name].try(:>, '') # we got new classes
         add_classes_to_foreman(env_name, JSON.parse(changes['new'][env_name]))
       end
-      if changes['obsolete'] and changes['obsolete'][env_name].try(:>, '') # we need to remove classes
+      if changes['obsolete'] && changes['obsolete'][env_name].try(:>, '') # we need to remove classes
         remove_classes_from_foreman(env_name, JSON.parse(changes['obsolete'][env_name]))
       end
-      if changes['updated'] and changes['updated'][env_name].try(:>, '') # we need to update classes
+      if changes['updated'] && changes['updated'][env_name].try(:>, '') # we need to update classes
         update_classes_in_foreman(env_name, JSON.parse(changes['updated'][env_name]))
       end
     end
@@ -60,7 +71,7 @@ class PuppetClassImporter
     #  [e.to_s]
   end
 
-  def new_classes_for environment
+  def new_classes_for(environment)
     old_classes = db_classes_name(environment)
     HashWithIndifferentAccess[
       actual_classes(environment).values.map do |actual_class|
@@ -69,15 +80,15 @@ class PuppetClassImporter
     ]
   end
 
-  def removed_classes_for environment
+  def removed_classes_for(environment)
     db_classes_name(environment) - actual_classes_name(environment)
   end
 
-  def updated_classes_for environment
+  def updated_classes_for(environment)
     return [] unless db_environments.include?(environment) && actual_environments.include?(environment)
     HashWithIndifferentAccess[
       db_classes(environment).map do |db_class|
-        params = EnvironmentClass.all_parameters_for_class(db_class.id, find_or_create_env(environment).id).map(&:lookup_key)
+        params = EnvironmentClass.all_parameters_for_class(db_class.id, find_or_create_env(environment).id).map(&:puppetclass_lookup_key)
         compare_classes(environment, db_class.name, params)
       end.compact
     ]
@@ -112,9 +123,8 @@ class PuppetClassImporter
     updated
   end
 
-
   def db_environments
-    @foreman_envs ||= (Environment.all.map(&:name) - ignored_environments)
+    @foreman_envs ||= (Environment.pluck('environments.name') - ignored_environments)
   end
 
   def actual_environments
@@ -129,27 +139,28 @@ class PuppetClassImporter
     db_environments - actual_environments
   end
 
-  def db_classes environment
+  def db_classes(environment)
     return @foreman_classes[environment] if @foreman_classes[environment]
     return [] unless (env = Environment.find_by_name(environment))
     @foreman_classes[environment] = env.puppetclasses.includes(:lookup_keys, :class_params)
   end
 
-  def db_classes_name environment
+  def db_classes_name(environment)
     db_classes(environment).map(&:name)
   end
 
-  def actual_classes environment
+  def actual_classes(environment)
     @proxy_classes[environment] ||= proxy.classes(environment).reject do |key, value|
       ignored_classes.find { |filter| filter.is_a?(Regexp) && filter =~ key }
     end
   end
 
-  def actual_classes_name environment
+  def actual_classes_name(environment)
     actual_classes(environment).keys
   end
 
   private
+
   attr_reader :proxy
 
   def ignored_environments
@@ -173,13 +184,13 @@ class PuppetClassImporter
     @logger ||= Rails.logger
   end
 
-  def load_classes_from_json blob
+  def load_classes_from_json(blob)
     ActiveSupport::JSON.decode blob
   end
 
-  def add_classes_to_foreman env_name, klasses
+  def add_classes_to_foreman(env_name, klasses)
     env         = find_or_create_env env_name
-    new_classes = klasses.map { |k| Puppetclass.find_or_create_by_name(k[0]) }
+    new_classes = klasses.map { |k| Puppetclass.where(:name => k[0]).first_or_create }
 
     new_classes.each do |new_class|
       EnvironmentClass.create! :puppetclass_id => new_class.id, :environment_id => env.id
@@ -188,7 +199,7 @@ class PuppetClassImporter
     end
   end
 
-  def update_classes_in_foreman environment, klasses
+  def update_classes_in_foreman(environment, klasses)
     env        = find_or_create_env(environment)
     db_classes = env.puppetclasses.where(:name => klasses.keys)
     db_classes.each do |db_class|
@@ -209,7 +220,7 @@ class PuppetClassImporter
         key.default_value = value
         key.key_type = nil
         key.validator_type = nil
-        key.save!
+        key.save!(:context => :importer)
       end
     end
   end
@@ -219,7 +230,7 @@ class PuppetClassImporter
       key        = db_class.class_params.find_by_key param_name
       key_in_env = EnvironmentClass.key_in_environment(env, db_class, key)
 
-      if key && key_in_env && !key.override?
+      if key && key_in_env
         #detach
         key_in_env.destroy
         # destroy if the key is not in any environment.
@@ -231,14 +242,15 @@ class PuppetClassImporter
   def add_new_parameter(env, klass, changed_params)
     changed_params["new"].map do |param_name, value|
       param = find_or_create_puppet_class_param klass, param_name, value
-      EnvironmentClass.create! :puppetclass_id => klass.id, :environment_id => env.id, :lookup_key_id => param.id
+      EnvironmentClass.create! :puppetclass_id => klass.id, :environment_id => env.id,
+        :puppetclass_lookup_key_id => param.id
     end
   end
 
-  def remove_classes_from_foreman env_name, klasses
+  def remove_classes_from_foreman(env_name, klasses)
     env     = find_or_create_env(env_name)
     classes = find_existing_foreman_classes(klasses)
-    env.puppetclasses.delete classes
+    env.puppetclasses.destroy classes
     # remove all old classes from hosts
     HostClass.joins(:host).where(:hosts => { :environment_id => env.id }, :puppetclass_id => classes).destroy_all
     if klasses.include? '_destroy_'
@@ -249,23 +261,18 @@ class PuppetClassImporter
     classes.not_in_any_environment.destroy_all
   end
 
-  def logger
-    @logger ||= Rails.logger
-  end
-
-  def find_existing_foreman_classes klasses = []
+  def find_existing_foreman_classes(klasses = [])
     Puppetclass.where(:name => klasses)
   end
 
-  def find_or_create_env env
+  def find_or_create_env(env)
     Environment.where(:name => env).first || Environment.create!(:name => env)
   end
 
-  def find_or_create_puppet_class_param klass, param_name, value
+  def find_or_create_puppet_class_param(klass, param_name, value)
     klass.class_params.where(:key => param_name).first ||
-      LookupKey.create!(:key            => param_name, :is_param => true,
-                        :required       => value.nil?, :override => value.nil?, :default_value => value,
-                        :key_type => Foreman::ImporterPuppetclass.suggest_key_type(value))
+      PuppetclassLookupKey.create!(:key => param_name, :required => value.nil?,
+                                   :override => value.nil?, :default_value => value,
+                                   :key_type => Foreman::ImporterPuppetclass.suggest_key_type(value))
   end
-
 end

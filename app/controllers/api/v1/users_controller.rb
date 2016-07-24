@@ -1,7 +1,9 @@
 module Api
   module V1
     class UsersController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
+      # find_resource needs to be defined prior to UsersMixin is included, it depends on @user
+      include Foreman::Controller::UsersMixin
 
       api :GET, "/users/", "List all users."
       param :search, String, :desc => "filter results"
@@ -10,20 +12,21 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @users = User.search_for(*search_options).paginate(paginate_options)
+        @users = User.
+          authorized(:view_users).except_hidden.
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/users/:id/", "Show an user."
       param :id, String, :required => true
 
       def show
-        @user
       end
 
       api :POST, "/users/", "Create an user."
       # TRANSLATORS: API documentation - do not translate
       description <<-DOC
-        Adds role 'Anonymous' to the user by default
+        Adds role 'Default role' to the user by default
       DOC
       param :user, Hash, :required => true do
         param :login, String, :required => true
@@ -36,10 +39,7 @@ module Api
       end
 
       def create
-        admin = params[:user].delete(:admin)
-        @user = User.new(params[:user]) { |u| u.admin = admin }
         if @user.save
-          @user.roles << Role.find_by_name("Anonymous") unless @user.roles.map(&:name).include? "Anonymous"
           process_success
         else
           process_resource_error
@@ -49,7 +49,7 @@ module Api
       api :PUT, "/users/:id/", "Update an user."
       # TRANSLATORS: API documentation - do not translate
       description <<-DOC
-        Adds role 'Anonymous' to the user if it is not already present.
+        Adds role 'Default role' to the user if it is not already present.
         Only admin can set admin account.
       DOC
       param :id, String, :required => true
@@ -63,18 +63,9 @@ module Api
       end
 
       def update
-        admin = params[:user].has_key?(:admin) ? params[:user].delete(:admin) : nil
-        # Remove keys for restricted variables when the user is editing their own account
-        if @user == User.current
-          for key in params[:user].keys
-            params[:user].delete key unless %w{password_confirmation password mail firstname lastname}.include? key
-          end
-        end
         if @user.update_attributes(params[:user])
-          # Only an admin can update admin attribute of another use
-          # this is required, as the admin field is blacklisted above
-          @user.update_attribute(:admin, admin) if User.current.admin and !admin.nil?
-          @user.roles << Role.find_by_name("Anonymous") unless @user.roles.map(&:name).include? "Anonymous"
+          update_sub_hostgroups_owners
+
           process_success
         else
           process_resource_error
@@ -92,11 +83,11 @@ module Api
         end
       end
 
-      protected
-      def resource_identifying_attributes
-        %w(id login)
-      end
+      private
 
+      def find_resource
+        editing_self? ? @user = User.find(User.current.id) : super
+      end
     end
   end
 end

@@ -1,11 +1,18 @@
 module Foreman::Model
   class Rackspace < ComputeResource
-
     validates :user, :password, :region, :presence => true
     validate :ensure_valid_region
 
+    attr_accessible :region
+
+    delegate :flavors, :to => :client
+
     def provided_attributes
       super.merge({ :ip => :public_ip_address })
+    end
+
+    def self.available?
+      Fog::Compute.providers.include?(:rackspace)
     end
 
     def self.model_name
@@ -16,18 +23,17 @@ module Foreman::Model
       [:image]
     end
 
-    def find_vm_by_uuid uuid
-      client.servers.get(uuid)
+    def find_vm_by_uuid(uuid)
+      super
     rescue Fog::Compute::Rackspace::Error
       raise(ActiveRecord::RecordNotFound)
     end
 
-    def create_vm args = { }
+    def create_vm(args = { })
       super(args)
-    rescue Exception => e
-      logger.debug "Unhandled Rackspace error: #{e.class}:#{e.message}\n " + e.backtrace.join("\n ")
-      errors.add(:base, e.message.to_s)
-      false
+    rescue Fog::Errors::Error => e
+      Foreman::Logging.exception("Unhandled Rackspace error", e)
+      raise e
     end
 
     def security_groups
@@ -42,23 +48,19 @@ module Foreman::Model
       ["rackspace"]
     end
 
-    def flavors
-      client.flavors
-    end
-
     def available_images
       client.images
     end
 
-    def test_connection options = {}
+    def test_connection(options = {})
       super and flavors
     rescue Excon::Errors::Unauthorized => e
       errors[:base] << e.response.body
-    rescue Fog::Compute::Rackspace::Error => e
+    rescue Fog::Compute::Rackspace::Error, Excon::Errors::SocketError=> e
       errors[:base] << e.message
     end
 
-    def region= value
+    def region=(value)
       self.uuid = value
     end
 
@@ -77,24 +79,26 @@ module Foreman::Model
       false
     end
 
-    def provider_friendly_name
+    def self.provider_friendly_name
       "Rackspace"
     end
 
     def ensure_valid_region
-      unless regions.include?(region.upcase)
-        errors.add(:region, 'is not valid')
-      end
+      errors.add(:region, 'is not valid') unless regions.include?(region.upcase)
     end
 
     def associated_host(vm)
-      Host.my_hosts.where(:ip => [vm.public_ip_address, vm.private_ip_address]).first
+      associate_by("ip", [vm.public_ip_address, vm.private_ip_address])
+    end
+
+    def user_data_supported?
+      true
     end
 
     private
 
     def client
-      @client = Fog::Compute.new(
+      @client ||= Fog::Compute.new(
         :provider => "Rackspace",
         :version => 'v2',
         :rackspace_api_key => password,
@@ -102,15 +106,14 @@ module Foreman::Model
         :rackspace_auth_url => url,
         :rackspace_region => region.downcase.to_sym
       )
-      return @client
     end
 
     def vm_instance_defaults
       #256 server
       super.merge(
-        :flavor_id => 1
+        :flavor_id => 1,
+        :config_drive => true
       )
     end
-
   end
 end

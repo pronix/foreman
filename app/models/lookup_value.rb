@@ -1,30 +1,59 @@
 class LookupValue < ActiveRecord::Base
-  include Authorization
-  belongs_to :lookup_key, :counter_cache => true
-  validates :match, :presence => true, :uniqueness => {:scope => :lookup_key_id}
+  include Authorizable
+
+  attr_accessible :match, :value, :lookup_key_id, :id, :_destroy, :host_or_hostgroup, :use_puppet_default, :lookup_key, :hidden_value
+
+  validates_lengths_from_database
+  audited :associated_with => :lookup_key, :allow_mass_assignment => true
+  delegate :hidden_value?, :hidden_value, :to => :lookup_key, :allow_nil => true
+
+  belongs_to :lookup_key
+  validates :match, :presence => true, :uniqueness => {:scope => :lookup_key_id}, :format => LookupKey::VALUE_REGEX
+  validate :value_present?
   delegate :key, :to => :lookup_key
   before_validation :sanitize_match
-  before_validation :validate_and_cast_value
-  validate :validate_list, :validate_regexp, :ensure_fqdn_exists, :ensure_hostgroup_exists
+
+  before_validation :validate_and_cast_value, :unless => Proc.new{|p| p.use_puppet_default }
+  validate :validate_value, :ensure_fqdn_exists, :ensure_hostgroup_exists
 
   attr_accessor :host_or_hostgroup
 
   serialize :value
-  attr_name :value
+  attr_name :match
 
-  scope :default, lambda { where(:match => "default").limit(1) }
+  scope :default, -> { where(:match => "default").limit(1) }
 
   scoped_search :on => :value, :complete_value => true, :default_order => true
   scoped_search :on => :match, :complete_value => true
   scoped_search :in => :lookup_key, :on => :key, :rename => :lookup_key, :complete_value => true
 
+  def value_present?
+    self.errors.add(:value, :blank) if value.to_s.empty? && !use_puppet_default && lookup_key.puppet?
+  end
+
+  def value=(val)
+    if val.is_a?(HashWithIndifferentAccess)
+      super(val.deep_to_hash)
+    else
+      super
+    end
+  end
+
   def name
-    value
+    match
   end
 
   def value_before_type_cast
-    return self.value if lookup_key.nil?
+    return read_attribute(:value) if errors[:value].present?
+    return self.value if lookup_key.nil? || lookup_key.contains_erb?(self.value)
     lookup_key.value_before_type_cast self.value
+  end
+
+  def validate_value
+    Foreman::Parameters::Validator.new(self,
+      :type => lookup_key.validator_type,
+      :validate_with => lookup_key.validator_rule,
+      :getter => :value).validate!
   end
 
   private
@@ -35,58 +64,43 @@ class LookupValue < ActiveRecord::Base
   end
 
   def validate_and_cast_value
-    return true if self.marked_for_destruction?
+    return true if self.marked_for_destruction? || !self.value.is_a?(String)
     begin
-      self.value = lookup_key.cast_validate_value self.value
+      unless self.lookup_key.contains_erb?(value)
+        Foreman::Parameters::Caster.new(self, :attribute_name => :value, :to => lookup_key.key_type).cast!
+      end
       true
-    rescue
+    rescue StandardError, SyntaxError => e
+      Foreman::Logging.exception("Error while parsing #{lookup_key}", e)
       errors.add(:value, _("is invalid %s") % lookup_key.key_type)
       false
     end
   end
 
-  def validate_regexp
-    return true unless (lookup_key.validator_type == 'regexp')
-    errors.add(:value, _("is invalid")) and return false unless (value =~ /#{lookup_key.validator_rule}/)
-  end
-
-  def validate_list
-    return true unless (lookup_key.validator_type == 'list')
-    errors.add(:value, _("%{value} is not one of %{rules}") % { :value => value, :rules => lookup_key.validator_rule }) and return false unless lookup_key.validator_rule.split(LookupKey::KEY_DELM).map(&:strip).include?(value)
-  end
-
   def ensure_fqdn_exists
-    md = match.match(/\Afqdn=(.*)/)
-    return true unless md
-    return true if Host.unscoped.find_by_name(md[1]) || host_or_hostgroup.try(:new_record?)
-    errors.add(:match, _("%{match} does not match an existing host") % { :match => match }) and return false
+    md = ensure_matcher(/fqdn=(.*)/)
+    return md if md == true || md == false
+    fqdn = md[1].split(LookupKey::KEY_DELM)[0]
+    return true if Host.unscoped.find_by_name(fqdn) || host_or_hostgroup.try(:new_record?)
+    errors.add(:match, _("%{match} does not match an existing host") % { :match => "fqdn=#{fqdn}" }) and return false
   end
 
   def ensure_hostgroup_exists
-    md = match.match(/\Ahostgroup=(.*)/)
-    return true unless md
-    return true if Hostgroup.unscoped.find_by_name(md[1]) || Hostgroup.unscoped.find_by_label(md[1]) || host_or_hostgroup.try(:new_record?)
-    errors.add(:match, _("%{match} does not match an existing host group") % { :match => match }) and return false
+    md = ensure_matcher(/hostgroup=(.*)/)
+    return md if md == true || md == false
+    hostgroup = md[1].split(LookupKey::KEY_DELM)[0]
+    return true if Hostgroup.unscoped.find_by_name(hostgroup) || Hostgroup.unscoped.find_by_title(hostgroup) || host_or_hostgroup.try(:new_record?)
+    errors.add(:match, _("%{match} does not match an existing host group") % { :match => "hostgroup=#{hostgroup}" }) and return false
   end
 
-  private
-
-  def enforce_permissions operation
-    # We get called again with the operation being set to create
-    return true if operation == "edit" and new_record?
-    allowed = case match
-      when /^fqdn=(.*)/
-        # check if current fqdn is in our allowed list
-        Host.my_hosts.where(:name => $1).exists? || self.host_or_hostgroup.try(:new_record?)
-      when /^hostgroup=(.*)/
-        # check if current hostgroup is in our allowed list
-        Hostgroup.my_groups.where(:label => $1).exists? || self.host_or_hostgroup.try(:new_record?)
-      else
-        false
-    end
-    return true if allowed
-    errors.add :base, _("You do not have permission to %s this Smart Variable") % operation
-    return false
+  def ensure_matcher(match_type)
+    return false if match.blank?
+    matcher = match.match(match_type)
+    return true unless matcher
+    matcher
   end
 
+  def skip_strip_attrs
+    ['value']
+  end
 end

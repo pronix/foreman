@@ -1,9 +1,8 @@
 module Api
   module V1
     class EnvironmentsController < V1::BaseController
-
       include Api::ImportPuppetclassesCommonController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/environments/", "List all environments."
       param :search, String, :desc => "Filter results"
@@ -12,7 +11,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @environments = Environment.search_for(*search_options).paginate(paginate_options)
+        @environments = Environment.
+          authorized(:view_environments).
+          search_for(*search_options).paginate(paginate_options)
       end
 
       api :GET, "/environments/:id/", "Show an environment."

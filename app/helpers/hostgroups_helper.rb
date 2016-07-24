@@ -2,13 +2,21 @@ module HostgroupsHelper
   include CommonParametersHelper
   include HostsAndHostgroupsHelper
 
-  def warning_message group
-    msg = [_("Are you sure?")]
+  def warning_message(group)
+    msg = [_("Delete %s?") % group.title ]
     if group.has_children?
       msg << _("This group has nested groups!") + "\n"
-      msg << _("Deleting this group will unlink its nested groups and any associated puppet classes and / or parameters")
+      msg << _("Please delete all nested groups before deleting it.")
     end
     msg.join("\n")
   end
 
+  def parent_hostgroups
+    accessible_hostgroups = accessible_resource_records(:hostgroup, :title).to_a
+    if @hostgroup.new_record?
+      accessible_hostgroups
+    else
+      accessible_hostgroups - @hostgroup.descendants - [@hostgroup]
+    end
+  end
 end

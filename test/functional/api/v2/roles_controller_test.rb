@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V2::RolesControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => 'staff' }
 
   test "should get index" do
@@ -10,6 +9,7 @@ class Api::V2::RolesControllerTest < ActionController::TestCase
     assert_not_nil assigns(:roles)
     roles = ActiveSupport::JSON.decode(@response.body)
     assert !roles.empty?
+    assert_equal Role.order(:name).pluck(:name), roles['results'].map { |r| r['name'] }
   end
 
   test "should show individual record" do
@@ -23,11 +23,11 @@ class Api::V2::RolesControllerTest < ActionController::TestCase
     assert_difference('Role.count') do
       post :create, { :role => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update role" do
-    put :update, { :id => roles(:manager).to_param, :role => { } }
+    put :update, { :id => roles(:manager).to_param, :role => valid_attrs }
     assert_response :success
   end
 
@@ -37,5 +37,4 @@ class Api::V2::RolesControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

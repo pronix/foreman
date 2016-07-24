@@ -1,17 +1,9 @@
-begin
-  require 'fog'
-rescue LoadError
-  Rails.logger.info "Fog is not installed - unable to manage compute resources"
-rescue => exception
-  Rails.logger.warn "Fog initialization failed - #{exception}"
-  Rails.logger.debug exception.backtrace.join("\n")
-end
 require 'timeout'
 
 class Foreman::Provision::SSH
   attr_reader :template, :uuid, :results, :address, :username, :options
 
-  def initialize address, username = "root", options = { }
+  def initialize(address, username = "root", options = { })
     @username = username
     @address  = address
     @template = options.delete(:template) || raise("must provide a template")
@@ -51,7 +43,7 @@ class Foreman::Provision::SSH
   end
 
   def remote_script
-    File.join("/", "tmp", "bootstrap-#{uuid}")
+    "bootstrap-#{uuid}"
   end
 
   def command_prefix
@@ -59,7 +51,10 @@ class Foreman::Provision::SSH
   end
 
   def command
-    "#{command_prefix} bash -c 'chmod 0701 #{remote_script} && #{command_prefix} #{remote_script}' | tee #{remote_script}.log"
+    # Use the users home to store the provision script since we can't reliably
+    # tell if other locations are writeable or executable by the user.
+    main_execution="(chmod 0701 ./#{remote_script} && #{command_prefix} ./#{remote_script} ; echo $? >#{remote_script}.status) 2>&1"
+    "#{command_prefix} sh -c '#{main_execution} | tee #{remote_script}.log; exit $(cat #{remote_script}.status)'"
   end
 
   def defaults
@@ -67,8 +62,8 @@ class Foreman::Provision::SSH
       :keys_only    => true,
       :config       => false,
       :auth_methods => %w( publickey ),
-      :compression  => "zlib",
-      :logger       => logger,
+      :compression  => true,
+      :logger       => logger
     }
   end
 
@@ -77,9 +72,9 @@ class Foreman::Provision::SSH
   end
 
   def initiate_connection!
-    Timeout::timeout(360) do
+    Timeout.timeout(360) do
       begin
-        Timeout::timeout(8) do
+        Timeout.timeout(8) do
           ssh.run('pwd')
         end
       rescue Errno::ECONNREFUSED
@@ -105,7 +100,7 @@ class Foreman::Provision::SSH
       rescue Timeout::Error
         retry
       rescue => e
-        logger.debug "SSH error: #{e.message}\n " + e.backtrace.join("\n ")
+        Foreman::Logging.exception("SSH error", e)
       end
     end
   end
@@ -117,5 +112,4 @@ class Foreman::Provision::SSH
   def scp
     Fog::SCP.new(address, username, options)
   end
-
 end

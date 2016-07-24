@@ -1,43 +1,31 @@
 require 'test_helper'
 
 class UsergroupTest < ActiveSupport::TestCase
-
   setup do
-    User.current = User.find_by_login("admin")
+    User.current = users :admin
   end
 
   test "usergroups should be creatable" do
     assert FactoryGirl.build(:usergroup).valid?
   end
 
-  test "name should be unique" do
-    one = FactoryGirl.create(:usergroup)
-    two = FactoryGirl.build(:usergroup, :name => one.name)
-
-    assert !two.valid?
-  end
-
   test "name is unique across user as well as usergroup" do
-    user = User.create :auth_source => auth_sources(:one), :login => "user", :mail  => "user@someware.com"
-    usergroup = FactoryGirl.build(:usergroup, :name => user.login)
-
-    assert !usergroup.valid?
+    User.expects(:where).with(:login => 'usergroup1').returns(['fakeuser'])
+    usergroup = FactoryGirl.build(:usergroup, :name => 'usergroup1')
+    refute usergroup.valid?
   end
+
+  should validate_uniqueness_of(:name)
+  should validate_presence_of(:name)
+  should have_many(:usergroup_members).dependent(:destroy)
+  should have_many(:users).dependent(:destroy)
 
   def populate_usergroups
-    @u1 = User.find_or_create_by_login :login => "u1", :mail => "u1@someware.com", :firstname => "u1", :auth_source => auth_sources(:one)
-    @u2 = User.find_or_create_by_login :login => "u2", :mail => "u2@someware.com", :firstname => "u2", :auth_source => auth_sources(:one)
-    @u3 = User.find_or_create_by_login :login => "u3", :mail => "u3@someware.com", :firstname => "u3", :auth_source => auth_sources(:one)
-    @u4 = User.find_or_create_by_login :login => "u4", :mail => "u4@someware.com", :firstname => "u4", :auth_source => auth_sources(:one)
-    @u5 = User.find_or_create_by_login :login => "u5", :mail => "u5@someware.com", :firstname => "u5", :auth_source => auth_sources(:one)
-    @u6 = User.find_or_create_by_login :login => "u6", :mail => "u6@someware.com", :firstname => "u6", :auth_source => auth_sources(:one)
-
-    @ug1 = Usergroup.find_or_create_by_name :name => "ug1"
-    @ug2 = Usergroup.find_or_create_by_name :name => "ug2"
-    @ug3 = Usergroup.find_or_create_by_name :name => "ug3"
-    @ug4 = Usergroup.find_or_create_by_name :name => "ug4"
-    @ug5 = Usergroup.find_or_create_by_name :name => "ug5"
-    @ug6 = Usergroup.find_or_create_by_name :name => "ug6"
+    (1..6).each do |number|
+      instance_variable_set("@ug#{number}", FactoryGirl.create(:usergroup, :name=> "ug#{number}"))
+      instance_variable_set("@u#{number}", FactoryGirl.create(:user, :mail => "u#{number}@someware.com",
+                                                              :login => "u#{number}"))
+    end
 
     @ug1.users      = [@u1, @u2]
     @ug2.users      = [@u2, @u3]
@@ -50,18 +38,15 @@ class UsergroupTest < ActiveSupport::TestCase
 
   test "hosts should be retrieved from recursive/complex usergroup definitions" do
     populate_usergroups
-    domain = domains(:mydomain)
     disable_orchestration
 
-    Host.with_options :architecture => architectures(:x86_64), :environment => environments(:production), :operatingsystem => operatingsystems(:redhat),
-                      :ptable => ptables(:one), :subnet => subnets(:one), :puppet_proxy => smart_proxies(:puppetmaster) do |object|
-      @h1 = object.find_or_create_by_name :name => "h1.someware.com", :ip => "2.3.4.10", :mac => "223344556601", :owner => @u1, :domain => domain
-      @h2 = object.find_or_create_by_name :name => "h2.someware.com", :ip => "2.3.4.11", :mac => "223344556602", :owner => @ug2, :domain => domain
-      @h3 = object.find_or_create_by_name :name => "h3.someware.com", :ip => "2.3.4.12", :mac => "223344556603", :owner => @u3, :domain => domain
-      @h4 = object.find_or_create_by_name :name => "h4.someware.com", :ip => "2.3.4.13", :mac => "223344556604", :owner => @ug5, :domain => domain
-      @h5 = object.find_or_create_by_name :name => "h5.someware.com", :ip => "2.3.4.14", :mac => "223344556605", :owner => @u2, :domain => domain
-      @h6 = object.find_or_create_by_name :name => "h6.someware.com", :ip => "2.3.4.15", :mac => "223344556606", :owner => @ug3, :domain => domain
-    end
+    @h1 = FactoryGirl.create(:host, :owner => @u1)
+    @h2 = FactoryGirl.create(:host, :owner => @ug2)
+    @h3 = FactoryGirl.create(:host, :owner => @u3)
+    @h4 = FactoryGirl.create(:host, :owner => @ug5)
+    @h5 = FactoryGirl.create(:host, :owner => @u2)
+    @h6 = FactoryGirl.create(:host, :owner => @ug3)
+
     assert_equal @u1.hosts.sort, [@h1]
     assert_equal @u2.hosts.sort, [@h2, @h5]
     assert_equal @u3.hosts.sort, [@h2, @h3, @h6]
@@ -82,82 +67,173 @@ class UsergroupTest < ActiveSupport::TestCase
 
   test "cannot be destroyed when in use by a host" do
     disable_orchestration
-    @ug1 = Usergroup.find_or_create_by_name :name => "ug1"
-    @h1  = hosts(:one)
+    @ug1 = Usergroup.where(:name => "ug1").first_or_create
+    @h1  = FactoryGirl.create(:host)
     @h1.update_attributes :owner => @ug1
     @ug1.destroy
     assert_equal @ug1.errors.full_messages[0], "ug1 is used by #{@h1}"
   end
 
-  test "cannot be destroyed when in use by another usergroup" do
-    @ug1 = Usergroup.find_or_create_by_name :name => "ug1"
-    @ug2 = Usergroup.find_or_create_by_name :name => "ug2"
+  test "can be destroyed when in use by another usergroup, it removes association automatically" do
+    @ug1 = Usergroup.where(:name => "ug1").first_or_create
+    @ug2 = Usergroup.where(:name => "ug2").first_or_create
     @ug1.usergroups = [@ug2]
-    @ug1.destroy
-    assert @ug1.errors.full_messages[0] == "ug1 is used by ug2"
+    assert @ug1.destroy
+    assert @ug2.reload
+    assert_empty UsergroupMember.where(:member_id => @ug2.id)
   end
 
-  test "removes user join model records" do
-    ug1 = Usergroup.find_or_create_by_name :name => "ug1"
-    u1  = User.find_or_create_by_login :login => "u1", :mail => "u1@someware.com", :auth_source => auth_sources(:one)
-    ug1.users = [u1]
-    assert_difference('UsergroupMember.count', -1) do
-      ug1.destroy
+  test "removes all cached_user_roles when roles are disassociated" do
+    user         = FactoryGirl.create(:user)
+    record       = FactoryGirl.create(:usergroup)
+    record.users = [user]
+    one          = FactoryGirl.create(:role)
+    two          = FactoryGirl.create(:role)
+
+    record.roles = [one, two]
+    assert_equal 3, user.reload.cached_user_roles.size
+
+    assert record.update_attributes(:role_ids => [ two.id ])
+    assert_equal 2, user.reload.cached_user_roles.size
+
+    record.role_ids = [ ]
+    assert_equal 1, user.reload.cached_user_roles.size
+
+    assert record.update_attribute(:role_ids, [ one.id ])
+    assert_equal 2, user.reload.cached_user_roles.size
+
+    record.roles << two
+    assert_equal 3, user.reload.cached_user_roles.size
+  end
+
+  test 'add_users is case insensitive and does not add nonexistent users' do
+    usergroup = FactoryGirl.create(:usergroup)
+    usergroup.send(:add_users, ['OnE', 'TwO', 'tHREE'])
+
+    # users 'one' 'two' are defined in fixtures, 'three' is not defined
+    assert_equal ['one', 'two'], usergroup.users.map(&:login).sort
+  end
+
+  test 'remove_users removes user list and is case insensitive' do
+    usergroup = FactoryGirl.create(:usergroup)
+    usergroup.send(:add_users, ['OnE', 'tWo'])
+    assert_equal ['one', 'two'], usergroup.users.map(&:login).sort
+
+    usergroup.send(:remove_users, ['ONE', 'TWO'])
+    assert_equal [], usergroup.users
+  end
+
+  test "can remove the admin flag from the group when another admin exists" do
+    usergroup = FactoryGirl.create(:usergroup, :admin => true)
+    admin1 = FactoryGirl.create(:user)
+    admin2 = FactoryGirl.create(:user, :admin => true)
+    usergroup.users = [admin1]
+
+    User.unscoped.except_hidden.only_admin.where('login NOT IN (?)', [admin1.login, admin2.login]).destroy_all
+    usergroup.admin = false
+    assert_valid usergroup
+  end
+
+  test "cannot remove the admin flag from the group providing the last admin account(s)" do
+    usergroup = FactoryGirl.create(:usergroup, :admin => true)
+    admin = FactoryGirl.create(:user)
+    usergroup.users = [admin]
+
+    User.unscoped.except_hidden.only_admin.where('login <> ?', admin.login).destroy_all
+    usergroup.admin = false
+    refute_valid usergroup, :admin, /last admin account/
+  end
+
+  test "cannot destroy the group providing the last admin accounts" do
+    usergroup = FactoryGirl.create(:usergroup, :admin => true)
+    admin = FactoryGirl.create(:user)
+    usergroup.users = [admin]
+
+    User.unscoped.except_hidden.only_admin.where('login <> ?', admin.login).destroy_all
+    refute_with_errors usergroup.destroy, usergroup, :base, /last admin user group/
+  end
+
+  test "receipients_for provides subscribers of notification recipients" do
+    users = [FactoryGirl.create(:user, :with_mail_notification), FactoryGirl.create(:user)]
+    notification = users[0].mail_notifications.first.name
+    usergroup = FactoryGirl.create(:usergroup)
+    usergroup.users << users
+    recipients = usergroup.recipients_for(notification)
+    assert_equal recipients, [users[0]]
+  end
+
+  # TODO test who can modify usergroup roles and who can assign users!!! possible privileges escalation
+
+  context 'external usergroups' do
+    setup do
+      @usergroup = FactoryGirl.create(:usergroup)
+      @external = @usergroup.external_usergroups.new(:auth_source_id => FactoryGirl.create(:auth_source_ldap).id,
+                                                     :name           => 'aname')
+      LdapFluff.any_instance.stubs(:ldap).returns(Net::LDAP.new)
+    end
+
+    test "can be associated with external_usergroups" do
+      LdapFluff.any_instance.stubs(:valid_group?).returns(true)
+
+      assert @external.save
+      assert @usergroup.external_usergroups.include? @external
+    end
+
+    test "won't save if usergroup is not in LDAP" do
+      LdapFluff.any_instance.stubs(:valid_group?).returns(false)
+
+      refute @external.save
+      assert_equal @external.errors.first, [:name, 'is not found in the authentication source']
+    end
+
+    test "delete user if not in LDAP directory" do
+      LdapFluff.any_instance.stubs(:valid_group?).with('aname').returns(false)
+      @usergroup.users << users(:one)
+      @usergroup.save
+
+      AuthSourceLdap.any_instance.expects(:users_in_group).with('aname').returns([])
+      @usergroup.external_usergroups.find { |eu| eu.name == 'aname'}.refresh
+
+      refute_includes @usergroup.users, users(:one)
+    end
+
+    test "add user if in LDAP directory" do
+      LdapFluff.any_instance.stubs(:valid_group?).with('aname').returns(true)
+      @usergroup.save
+
+      AuthSourceLdap.any_instance.expects(:users_in_group).with('aname').returns([users(:one).login])
+      @usergroup.external_usergroups.find { |eu| eu.name == 'aname'}.refresh
+      assert_includes @usergroup.users, users(:one)
+    end
+
+    test "keep user if in LDAP directory" do
+      LdapFluff.any_instance.stubs(:valid_group?).with('aname').returns(true)
+      @usergroup.users << users(:one)
+      @usergroup.save
+
+      AuthSourceLdap.any_instance.expects(:users_in_group).with('aname').returns([users(:one).login])
+      @usergroup.external_usergroups.find { |eu| eu.name == 'aname'}.refresh
+      assert_includes @usergroup.users, users(:one)
     end
   end
 
-  def setup_user operation
-    @one = users(:one)
-    as_admin do
-      role = Role.find_or_create_by_name :name => "#{operation}_usergroups"
-      role.permissions = ["#{operation}_usergroups".to_sym]
-      @one.roles = [role]
-      @one.save!
-    end
-    User.current = @one
+  test 'can search usergroup by role id' do
+    # Setup role and assign to user
+    role = Role.where(:name => "foobar").first_or_create
+    usergroup = FactoryGirl.create(:usergroup)
+    usergroup.role_ids = [role.id]
+
+    groups = Usergroup.search_for("role_id = #{role.id}")
+    assert (groups.include? usergroup)
   end
 
-  test "user with create permissions should be able to create" do
-    setup_user "create"
-    record =  Usergroup.create :name => "dummy"
-    assert record.valid?
-    assert !record.new_record?
-  end
+  test 'can search usergroup by role' do
+    # Setup role and assign to user
+    role = Role.where(:name => "foobar").first_or_create
+    usergroup = FactoryGirl.create(:usergroup)
+    usergroup.role_ids = [role.id]
 
-  test "user with view permissions should not be able to create" do
-    setup_user "view"
-    record =  Usergroup.create :name => "dummy"
-    assert record.valid?
-    assert record.new_record?
+    groups = Usergroup.search_for("role = #{role.name}")
+    assert (groups.include? usergroup)
   end
-
-  test "user with destroy permissions should be able to destroy" do
-    record = FactoryGirl.create(:usergroup)
-    setup_user "destroy"
-    assert record.destroy
-    assert record.frozen?
-  end
-
-  test "user with edit permissions should not be able to destroy" do
-    record = FactoryGirl.create(:usergroup)
-    setup_user "edit"
-    assert !record.destroy
-    assert !record.frozen?
-  end
-
-  test "user with edit permissions should be able to edit" do
-    record = FactoryGirl.create(:usergroup)
-    setup_user "edit"
-    record.name = "renamed"
-    assert record.save
-  end
-
-  test "user with destroy permissions should not be able to edit" do
-    record = FactoryGirl.create(:usergroup)
-    setup_user "destroy"
-    record.name = "renamed"
-    assert !record.save
-    assert record.valid?
-  end
-
 end

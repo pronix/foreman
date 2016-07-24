@@ -7,7 +7,7 @@ module WillPaginate
      protected
 
       def html_container(html)
-        tag :div, tag(:ul, html), container_attributes
+        tag :div, tag(:ul, html, :class=>"pagination pull-right"), container_attributes
       end
 
       def page_number(page)
@@ -21,7 +21,6 @@ module WillPaginate
       def gap
         tag :li, link(super, '#'), :class => 'disabled'
       end
-
     end
   end
 end

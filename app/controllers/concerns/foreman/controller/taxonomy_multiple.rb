@@ -3,33 +3,33 @@ module Foreman::Controller::TaxonomyMultiple
 
   included do
     #TODO: make this before filter work, its not working as the same filter is defined in the hosts controller
-    #before_filter :find_multiple, :only => [:select_multiple_organization, :update_multiple_organization,
+    #before_action :find_multiple, :only => [:select_multiple_organization, :update_multiple_organization,
     #                                        :select_multiple_location,     :update_multiple_location]
   end
 
   def select_multiple_organization
-    find_multiple
+    @hosts = find_multiple
   end
 
   def select_multiple_location
-    find_multiple
+    @hosts = find_multiple
   end
 
   def update_multiple_organization
-    find_multiple
+    @hosts = find_multiple
     update_multiple_taxonomies(:organization)
   end
 
   def update_multiple_location
-    find_multiple
+    @hosts = find_multiple
     update_multiple_taxonomies(:location)
   end
 
   private
 
-  def update_multiple_taxonomies type
+  def update_multiple_taxonomies(type)
     # simple validations
-    if (params[type].nil?) or (id=params[type][:id]).blank?
+    if (params[type].nil?) || (id=params[type][:id]).blank?
       error "No #{type.to_s.classify} selected!"
       redirect_to(hosts_path) and return
     end
@@ -52,5 +52,4 @@ module Foreman::Controller::TaxonomyMultiple
     notice "Updated hosts: Changed #{type.to_s.classify}"
     redirect_back_or_to hosts_path
   end
-
 end

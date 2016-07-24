@@ -1,7 +1,6 @@
 require 'test_helper'
 
 class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
-
   valid_attrs = { :name => 'master02', :url => 'http://server:8443' }
 
   test "should get index" do
@@ -9,20 +8,20 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
     assert_response :success
     assert_not_nil assigns(:smart_proxies)
     smart_proxies = ActiveSupport::JSON.decode(@response.body)
-    assert !smart_proxies.empty?
+    assert_not smart_proxies.empty?
   end
 
   test "should get index filtered by type" do
     as_user :admin do
-      get :index, { :type => 'tftp' }
+      get :index, { :type => 'TFTP' }
     end
     assert_response :success
     assert_not_nil assigns(:smart_proxies)
     smart_proxies = ActiveSupport::JSON.decode(@response.body)
-    assert !smart_proxies.empty?
+    assert_not smart_proxies.empty?
 
     returned_proxy_ids = smart_proxies.map { |p| p["smart_proxy"]["id"] }
-    expected_proxy_ids = SmartProxy.tftp_proxies.map { |p| p.id }
+    expected_proxy_ids = SmartProxy.with_features("TFTP").map { |p| p.id }
     assert returned_proxy_ids == expected_proxy_ids
   end
 
@@ -37,7 +36,7 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
     get :show, { :id => smart_proxies(:one).to_param }
     assert_response :success
     show_response = ActiveSupport::JSON.decode(@response.body)
-    assert !show_response.empty?
+    assert_not show_response.empty?
   end
 
   test "should create smart_proxy" do
@@ -48,7 +47,7 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
   end
 
   test "should update smart_proxy" do
-    put :update, { :id => smart_proxies(:one).to_param, :smart_proxy => { } }
+    put :update, { :id => smart_proxies(:one).to_param, :smart_proxy => valid_attrs }
     assert_response :success
   end
 
@@ -91,13 +90,15 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
     as_admin do
       Host::Managed.update_all(:environment_id => nil)
       Hostgroup.update_all(:environment_id => nil)
+      HostClass.destroy_all
+      HostgroupClass.destroy_all
       Puppetclass.destroy_all
       Environment.destroy_all
     end
     # This is the database status
     # and should result in a db_tree of {"env1" => ["a", "b", "c"], "env2" => ["a", "b", "c"]}
     as_admin do
-      ["a", "b", "c"].each  {|name| Puppetclass.create :name => name}
+      ["a", "b", "c"].each {|name| Puppetclass.create :name => name}
       for name in ["env1", "env2"] do
         e = Environment.create!(:name => name)
         e.puppetclasses = Puppetclass.all
@@ -106,13 +107,12 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
     # This is the on-disk status
     # and should result in a disk_tree of {"env1" => ["a", "b", "c"],"env2" => ["a", "b", "c"]}
     envs = HashWithIndifferentAccess.new(:env1 => %w{a b c}, :env2 => %w{a b c})
-    pcs = [HashWithIndifferentAccess.new( "a" => { "name" => "a", "module" => "", "params"=> {'key' => 'special'}  } )]
+    pcs = [HashWithIndifferentAccess.new("a" => { "name" => "a", "module" => nil, "params"=> {'key' => 'special'} })]
     classes = Hash[pcs.map { |k| [k.keys.first, Foreman::ImporterPuppetclass.new(k.values.first)] }]
     Environment.expects(:puppetEnvs).returns(envs).at_least(0)
     ProxyAPI::Puppet.any_instance.stubs(:environments).returns(["env1", "env2"])
     ProxyAPI::Puppet.any_instance.stubs(:classes).returns(classes)
   end
-
 
   # puppetmaster proxy - import_puppetclasses tests
 
@@ -167,20 +167,18 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
   test "should obsolete environment" do
     setup_import_classes
     as_admin do
-      xyz_environment = Environment.create!(:name => 'xyz')
+      Environment.create!(:name => 'xyz')
     end
     assert_difference('Environment.count', -1) do
       post :import_puppetclasses, {:id => smart_proxies(:puppetmaster).id}, set_session_user
     end
     assert_response :success
-    response = ActiveSupport::JSON.decode(@response.body)
   end
 
   test "should obsolete puppetclasses" do
     setup_import_classes
     as_admin do
-      environment = Environment.find_by_name("env1")
-      assert_difference('environment.puppetclasses.count', -2) do
+      assert_difference('Environment.find_by_name("env1").puppetclasses.count', -2) do
         post :import_puppetclasses, {:id => smart_proxies(:puppetmaster).id}, set_session_user
       end
     end
@@ -190,11 +188,10 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
   test "should update puppetclass smart class parameters" do
     setup_import_classes
     LookupKey.destroy_all
-    assert_difference('LookupKey.count', 2) do
+    assert_difference('LookupKey.count', 1) do
       post :import_puppetclasses, {:id => smart_proxies(:puppetmaster).id}, set_session_user
     end
     assert_response :success
-    response = ActiveSupport::JSON.decode(@response.body)
   end
 
   test "no changes on import_puppetclasses" do
@@ -222,5 +219,4 @@ class Api::V1::SmartProxiesControllerTest < ActionController::TestCase
       assert_equal env_name, response['results']['name']
     end
   end
-
 end

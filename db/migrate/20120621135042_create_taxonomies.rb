@@ -1,14 +1,14 @@
 class CreateTaxonomies < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :taxonomies do |t|
-      t.string :name
-      t.string :type
+      t.string :name, :limit => 255
+      t.string :type, :limit => 255
 
       t.timestamps
     end
   end
 
-  def self.down
+  def down
     drop_table :taxonomies
   end
 end

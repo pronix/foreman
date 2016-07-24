@@ -1,3 +1,4 @@
 <% title(_("Virtual Machines on %s") % @compute_resource) %>
-
-<%= render "compute_resources_vms/index/#{@compute_resource.provider.downcase}" %>
+<%= vms_table do %>
+  <%= render "compute_resources_vms/index/#{@compute_resource.provider.downcase}" %>
+<% end %>

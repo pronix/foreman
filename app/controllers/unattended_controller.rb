@@ -1,46 +1,26 @@
 class UnattendedController < ApplicationController
+  include Foreman::Renderer
+
   layout false
 
-  # Methods which return configuration files for syslinux(pxe), pxegrub or g/ipxe
-  PXE_CONFIG_URLS = [:pxe_kickstart_config, :pxe_debian_config, :pxemenu] + TemplateKind.where("name LIKE ?","PXELinux").map(&:name)
-  PXEGRUB_CONFIG_URLS = [:pxe_jumpstart_config] + TemplateKind.where("name LIKE ?", "PXEGrub").map(&:name)
-  GPXE_CONFIG_URLS = [:gpxe_kickstart_config] + TemplateKind.where("name LIKE ?", "gPXE").map(&:name)
-  CONFIG_URLS = PXE_CONFIG_URLS + GPXE_CONFIG_URLS + PXEGRUB_CONFIG_URLS
-  # Methods which return valid provision instructions, used by the OS
-  PROVISION_URLS = [:kickstart, :preseed, :jumpstart ] + TemplateKind.where("name LIKE ?", "provision").map(&:name)
-  # Methods which returns post install instructions for OS's which require it
-  FINISH_URLS = [:preseed_finish, :jumpstart_finish] + TemplateKind.where("name LIKE ?", "finish").map(&:name)
-
   # We dont require any of these methods for provisioning
-  FILTERS = [:require_ssl, :require_login, :session_expiry, :update_activity_time, :set_taxonomy, :authorize]
+  FILTERS = [:require_login, :session_expiry, :update_activity_time, :set_taxonomy, :authorize]
   FILTERS.each do |f|
     define_method("#{f}_with_unattended") do
-      send("#{f}_without_unattended") if params.keys.include?("spoof")
+      send("#{f}_without_unattended") if preview?
     end
     alias_method_chain f, :unattended
   end
 
   # We want to find out our requesting host
-  before_filter :get_host_details, :allowed_to_install?, :except => :template
-  before_filter :handle_ca, :only => PROVISION_URLS
+  before_action :get_host_details, :allowed_to_install?, :except => :hostgroup_template
+  before_action :handle_ca, :if => Proc.new { params[:kind] == 'provision' }
+  before_action :handle_realm, :if => Proc.new { params[:kind] == 'provision' }
   # load "helper" variables to be available in the templates
-  before_filter :load_template_vars, :only => PROVISION_URLS
-  before_filter :pxe_config, :only => CONFIG_URLS
+  before_action :load_template_vars, :only => :host_template
   # all of our requests should be returned in text/plain
-  after_filter :set_content_type
-  before_filter :set_admin_user, :only => :built
-
-  def kickstart
-    unattended_local
-  end
-
-  def preseed
-    unattended_local
-  end
-
-  def preseed_finish
-    unattended_local
-  end
+  after_action :set_content_type
+  before_action :set_admin_user, :only => :built
 
   # this actions is called by each operatingsystem post/finish script - it notify us that the OS installation is done.
   def built
@@ -49,37 +29,61 @@ class UnattendedController < ApplicationController
     head(@host.built ? :created : :conflict)
   end
 
-  def template
-    return head(:not_found) unless (params.has_key?("id") and params.has_key?(:hostgroup))
+  def hostgroup_template
+    return head(:not_found) unless (params.has_key?("id") && params.has_key?(:hostgroup))
 
-    template = ConfigTemplate.find_by_name(params['id'])
-    @host = Hostgroup.find_by_name(params['hostgroup'])
-
-    return head(:not_found) unless template and @host
+    template = ProvisioningTemplate.find_by_name(params['id'])
+    @host = Hostgroup.find_by_title(params['hostgroup'])
+    return head(:not_found) unless template && @host
 
     load_template_vars if template.template_kind.name == 'provision'
     safe_render template.template
   end
 
-  # Returns a valid GPXE config file to kickstart hosts
-  def gpxe_kickstart_config
-  end
-
-  def pxe_config
-    @kernel = @host.operatingsystem.kernel @host.arch
-    @initrd = @host.operatingsystem.initrd @host.arch
-  end
-
   # Generate an action for each template kind
   # i.e. /unattended/provision will render the provisioning template for the requesting host
-  TemplateKind.all.each do |kind|
-    define_method kind.name do
-      @type = kind.name
-      unattended_local
-    end
+  def host_template
+    return head(:not_found) unless params[:kind].present?
+    render_template params[:kind]
+  end
+
+  protected
+
+  def require_ssl?
+    return super if params.key?(:spoof) || params.key?(:hostname)
+    false
   end
 
   private
+
+  def preview?
+    params.key?(:spoof) or params.key?(:hostname)
+  end
+
+  def render_custom_error(status, error_message, params)
+    logger.error error_message % params
+    # add a comment character (works with Red Hat and Debian systems) to avoid parsing errors
+    render(:text => '# ' + _(error_message) % params, :status => status, :content_type => 'text/plain')
+  end
+
+  def render_template(type)
+    # Compatibility with older URLs
+    type = 'iPXE' if type == 'gPXE'
+
+    if (config = @host.provisioning_template({ :kind => type }))
+      logger.debug "rendering DB template #{config.name} - #{type}"
+      if !preview?
+        User.as_anonymous_admin do
+          safe_render config
+        end
+      else
+        safe_render config
+      end
+    else
+      error_message = N_("unable to find %{type} template for %{host} running %{os}")
+      render_custom_error(:not_found, error_message, {:type => type, :host => @host.name, :os => @host.operatingsystem})
+    end
+  end
 
   # lookup for a host based on the ip address and if possible by a mac address(as sent by anaconda)
   # if the host was found than its record will be in @host
@@ -88,31 +92,37 @@ class UnattendedController < ApplicationController
   def get_host_details
     @host = find_host_by_spoof || find_host_by_token || find_host_by_ip_or_mac
     unless @host
-      logger.info "#{controller_name}: unable to find a host that matches the request from #{request.env['REMOTE_ADDR']}"
-      head(:not_found) and return
+      error_message = N_("%{controller}: unable to find a host that matches the request from %{addr}")
+      render_custom_error(:not_found, error_message, {:controller => controller_name, :addr => request.env['REMOTE_ADDR']})
+      return
     end
     unless @host.operatingsystem
-      logger.error "#{controller_name}: #{@host.name}'s operating system is missing!"
-      head(:conflict) and return
+      error_message = N_("%{controller}: %{host}'s operating system is missing")
+      render_custom_error(:conflict, error_message, {:controller => controller_name, :host => @host.name})
+      return
     end
     unless @host.operatingsystem.family
-      # Then, for some reason, the OS has not been specialized into a Redhat or Debian class
-      logger.error "#{controller_name}: #{@host.name}'s operating system [#{@host.operatingsystem.fullname}] has no OS family!"
-      head(:conflict) and return
+      error_message = N_("%{controller}: %{host}'s operating system %{os} has no OS family")
+      render_custom_error(:conflict, error_message, {:controller => controller_name, :host => @host.name, :os => @host.operatingsystem.fullname})
+      return
     end
-    logger.info "Found #{@host}"
+    logger.debug "Found #{@host}"
   end
 
   def find_host_by_spoof
-    spoof = params.delete("spoof")
-    return nil if spoof.blank?
-    @spoof = true
-    Host.find_by_ip(spoof)
+    host = Host.authorized('view_hosts').joins(:primary_interface).where("#{Nic::Base.table_name}.ip" => params['spoof']).first if params['spoof'].present?
+    host ||= Host.authorized('view_hosts').find_by_name(params['hostname']) if params['hostname'].present?
+    @spoof = host.present?
+    host
   end
 
   def find_host_by_token
-    token = params.delete("token")
+    token = params.delete('token')
     return nil if token.blank?
+    # Quirk: ZTP requires the .slax suffix
+    if (result = token.match(/^([a-z0-9-]+)(.slax)$/i))
+      token, _suffix = result.captures
+    end
     Host.for_token(token).first
   end
 
@@ -132,19 +142,21 @@ class UnattendedController < ApplicationController
           mac_list << request.env[header].split[1].strip.downcase if header =~ /^HTTP_X_RHN_PROVISIONING_MAC_/
         end
       rescue => e
-        logger.info "unknown RHN_PROVISIONING header #{e}"
+        Foreman::Logging.exception("unknown RHN_PROVISIONING header", e)
         mac_list = []
       end
     end
     # we try to match first based on the MAC, falling back to the IP
-    Host.where(mac_list.empty? ? { :ip => ip } : ["lower(mac) IN (?)", mac_list]).first
+    # host is readonly because of association so we reload it if we find it
+    host = Host.joins(:provision_interface).where(mac_list.empty? ? {:nics => {:ip => ip}} : ["lower(nics.mac) IN (?)", mac_list]).first
+    host ? Host.find(host.id) : nil
   end
 
   def allowed_to_install?
-    (@host.build or @spoof) ? true : head(:method_not_allowed)
+    (@host.build || @spoof) ? true : head(:method_not_allowed)
   end
 
-  # Cleans Certificate and enable autosign. This is run as a before_filter for provisioning templates.
+  # Cleans Certificate and enable autosign. This is run as a before_action for provisioning templates.
   # The host is requesting its build configuration so I guess we just send them some text so a post mortum can see what happened
   def handle_ca
     # The reason we do it here is to minimize the amount of time it is possible to automatically get a certificate
@@ -152,87 +164,27 @@ class UnattendedController < ApplicationController
     # We don't do anything if we are in spoof mode.
     return true if @spoof
 
-    # This should terminate the before_filter and the action. We return a HTTP
+    # This should terminate the before_action and the action. We return a HTTP
     # error so the installer knows something is wrong. This is tested with
     # Anaconda, but maybe Suninstall will choke on it.
-    render(:text => _("Failed to clean any old certificates or add the autosign entry. Terminating the build!"), :status => 500) unless @host.handle_ca
+    render(:text => _("Failed to clean any old certificates or add the autosign entry. Terminating the build!"), :status => :internal_server_error) unless @host.handle_ca
     #TODO: Email the user who initiated this build operation.
   end
 
-  # we try to find this host specific template
-  # if it doesn't exists, we'll try to find a local generic template
-  # otherwise render the default view
-  def unattended_local
-    if (config = @host.configTemplate({ :kind => @type }))
-      logger.debug "rendering DB template #{config.name} - #{@type}"
-      safe_render config and return
-    end
-    type = "unattended_local/#{request.path.gsub("/#{controller_name}/","")}.local"
-    render :template => type if File.exists?("#{Rails.root}/app/views/#{type}.rhtml")
+  # Reset realm OTP. This is run as a before_action for provisioning templates.
+  def handle_realm
+    # We don't do anything if we are in spoof mode.
+    return true if @spoof
+
+    # This should terminate the before_action and the action. We return a HTTP
+    # error so the installer knows something is wrong. This is tested with
+    # Anaconda, but maybe Suninstall will choke on it.
+    render(:text => _("Failed to get a new realm OTP. Terminating the build!"), :status => :internal_server_error) unless @host.handle_realm
   end
 
   def set_content_type
     response.headers['Content-Type'] = 'text/plain'
   end
-
-  def load_template_vars
-    # load the os family default variables
-    send "#{@host.os.pxe_type}_attributes"
-  end
-
-  def jumpstart_attributes
-    if @host.operatingsystem.supports_image and @host.use_image
-      @install_type     = "flash_install"
-      # We have an individual override for the host's image file
-      if @host.image_file
-        @archive_location = @host.image_file
-      else
-        @archive_location = @host.default_image_file
-      end
-    else
-      @install_type = "initial_install"
-      @system_type  = "standalone"
-      @cluster      = "SUNWCreq"
-      @packages     = "SUNWgzip"
-      @locale       = "C"
-    end
-    @disk = @host.diskLayout
-  end
-
-  def kickstart_attributes
-    @dynamic   = @host.diskLayout =~ /^#Dynamic/
-    @arch      = @host.architecture.name
-    os         = @host.operatingsystem
-    @osver     = os.major.to_i
-    @mediapath = os.mediumpath @host
-    @repos     = os.repos @host
-
-    # force static network configuration if static http parameter is defined, in the future this needs to go into the GUI
-    @static = !params[:static].empty?
-  end
-
-  def preseed_attributes
-    @preseed_path   = @host.os.preseed_path   @host
-    @preseed_server = @host.os.preseed_server @host
-  end
-
-  def yast_attributes
-  end
-
-  def aif_attributes
-    os         = @host.operatingsystem
-    @mediapath = os.mediumpath @host
-  end
-
-  def memdisk_attributes
-    os         = @host.operatingsystem
-    @mediapath = os.mediumpath @host
-  end
-
-  def waik_attributes
-  end
-
-  private
 
   # This method updates the IP held by Foreman from the incoming request.
   # Useful on unmanaged DHCP systems, with token-based installs where Foreman
@@ -251,30 +203,30 @@ class UnattendedController < ApplicationController
     ip = request.env['REMOTE_ADDR']
 
     # check if someone is asking on behalf of another system (load balance etc)
-    if request.env['HTTP_X_FORWARDED_FOR'].present? and (ip =~ Regexp.new(Setting[:remote_addr]))
+    if request.env['HTTP_X_FORWARDED_FOR'].present? && (ip =~ Regexp.new(Setting[:remote_addr]))
       ip = request.env['HTTP_X_FORWARDED_FOR']
     end
 
     ip
   end
 
-  def safe_render template
-    template_name = ""
+  def safe_render(template)
+    @template_name = 'Unnamed'
     if template.is_a?(String)
       @unsafe_template  = template
-    elsif template.is_a?(ConfigTemplate)
+    elsif template.is_a?(ProvisioningTemplate)
       @unsafe_template  = template.template
-      template_name = template.name
+      @template_name = template.name
     else
       raise "unknown template"
     end
 
     begin
-      render :inline => "<%= unattended_render(@unsafe_template).html_safe %>" and return
-    rescue Exception => exc
-      msg = _("There was an error rendering the %s template: ") % (template_name)
-      render :text => msg + exc.message, :status => 500 and return
+      render :inline => "<%= unattended_render(@unsafe_template, @template_name).html_safe %>" and return
+    rescue => error
+      msg = _("There was an error rendering the %s template: ") % (@template_name)
+      Foreman::Logging.exception(msg, error)
+      render :text => msg + error.message, :status => :internal_server_error and return
     end
   end
-
 end

@@ -1,5 +1,5 @@
 class ConvertReports < ActiveRecord::Migration
-  def self.up
+  def up
     say "About to convert all of the #{Report.count} reports log field into a more DB optimized way... this might take a while....."
 
     Report.find_in_batches do |reports|
@@ -28,10 +28,9 @@ class ConvertReports < ActiveRecord::Migration
       end
     end
     remove_column :reports, :log
-
   end
 
-  def self.down
+  def down
     add_column :reports, :log, :text
     say "cant recreate the data, import it again"
   end

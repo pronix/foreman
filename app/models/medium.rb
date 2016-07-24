@@ -1,22 +1,28 @@
 class Medium < ActiveRecord::Base
-  include Authorization
+  include Authorizable
+  extend FriendlyId
+  friendly_id :name
   include Taxonomix
   include ValidateOsFamily
+  include Parameterizable::ByIdName
+  audited :allow_mass_assignment => true
 
-  before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups)
+  attr_accessible :name, :path, :media_path, :config_path, :image_path,
+    :os_family, :operatingsystems,:operatingsystem_ids, :operatingsystem_names
+
+  validates_lengths_from_database
+
+  before_destroy :ensure_hosts_not_in_build
 
   has_and_belongs_to_many :operatingsystems
-  has_many_hosts
-  has_many :hostgroups
+  has_many_hosts :dependent => :nullify
+  has_many :hostgroups, :dependent => :nullify
 
   # We need to include $ in this as $arch, $release, can be in this string
   VALID_NFS_PATH=/\A([-\w\d\.]+):(\/[\w\d\/\$\.]+)\Z/
-  validates :name, :uniqueness => true, :presence => true,
-                   :format => { :with => /\A(\S+\s)*\S+\Z/, :message => N_("can't be blank or contain trailing white spaces.") }
+  validates :name, :uniqueness => true, :presence => true
   validates :path, :uniqueness => true, :presence => true,
-                   :format => { :with => /^(http|https|ftp|nfs):\/\//,
-                                :message => N_("Only URLs with schema http://, https://, ftp:// or nfs:// are allowed (e.g. nfs://server/vol/dir)")
-                              }
+    :url_schema => ['http', 'https', 'ftp', 'nfs']
   validates :media_path, :config_path, :image_path, :allow_blank => true,
                 :format => { :with => VALID_NFS_PATH, :message => N_("does not appear to be a valid nfs mount path")},
                 :if => Proc.new { |m| m.respond_to? :media_path }
@@ -51,7 +57,16 @@ class Medium < ActiveRecord::Base
   end
 
   # Write the image path, with a trailing "/" if required
-  def image_path= path
-    write_attribute :image_path, "#{path}#{"/" unless path =~ /\/$|^$/}"
+  def image_path=(path)
+    write_attribute :image_path, "#{path}#{'/' unless path =~ /\/$|^$/}"
+  end
+
+  def ensure_hosts_not_in_build
+    return true if (hosts_in_build = self.hosts.where(:build => true)).empty?
+    hosts_in_build.each do |host|
+      self.errors.add :base, _("%{record} is used by host in build mode %{what}") % { :record => self.name, :what => host.name }
+    end
+    Rails.logger.error "You may not destroy #{self.to_label} as it is used by hosts in build mode!"
+    false
   end
 end

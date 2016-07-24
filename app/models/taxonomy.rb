@@ -1,38 +1,66 @@
 class Taxonomy < ActiveRecord::Base
-  audited :allow_mass_assignment => true
-  has_associated_audits
+  validates_lengths_from_database
+
+  include Authorizable
+  include NestedAncestryCommon
 
   serialize :ignore_types, Array
-  validates :name, :presence => true, :uniqueness => {:scope => :type}
+
+  attr_accessible :name, :title, :description, :ignore_types,
+    :config_template_ids, :config_template_names,
+    :compute_resource_ids, :compute_resource_names,
+    :domain_ids, :domain_names,
+    :environment_ids, :environment_names,
+    :hostgroup_ids, :hostgroup_names,
+    :location_ids, :location_names,
+    :medium_ids, :medium_names,
+    :organization_ids, :organization_names,
+    :provisioning_template_ids, :provisioning_template_names,
+    :ptable_ids, :ptable_names,
+    :realm_ids, :realm_names,
+    :smart_proxy_ids, :smart_proxy_names,
+    :subnet_ids, :subnet_names,
+    :user_ids, :users, :user_names
 
   belongs_to :user
-  before_destroy EnsureNotUsedBy.new(:hosts)
+  after_create :assign_taxonomy_to_user
 
   has_many :taxable_taxonomies, :dependent => :destroy
   has_many :users, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'User'
   has_many :smart_proxies, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'SmartProxy'
   has_many :compute_resources, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'ComputeResource'
   has_many :media, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Medium'
-  has_many :config_templates, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'ConfigTemplate'
+  has_many :provisioning_templates, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'ProvisioningTemplate'
+  has_many :ptables, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Ptable'
   has_many :domains, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Domain'
+  has_many :realms, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Realm'
   has_many :hostgroups, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Hostgroup'
   has_many :environments, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Environment'
   has_many :subnets, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Subnet'
 
-  scoped_search :on => :name, :complete_value => true
-
   validate :check_for_orphans, :unless => Proc.new {|t| t.new_record?}
+
+  validates :name, :presence => true, :uniqueness => {:scope => [:ancestry, :type], :case_sensitive => false}
+  validates :title, :presence => true, :uniqueness => {:scope => :type}
+
   before_validation :sanitize_ignored_types
+  after_create :assign_default_templates
 
-  delegate :import_missing_ids, :to => :tax_host
+  scoped_search :on => :description, :complete_enabled => :false, :only_explicit => true
+  scoped_search :on => :id
 
-  def to_param
-    "#{id.to_s.parameterize}"
-  end
+  delegate :import_missing_ids, :inherited_ids, :used_and_selected_or_inherited_ids, :selected_or_inherited_ids,
+           :non_inherited_ids, :used_or_inherited_ids, :used_ids, :to => :tax_host
 
-  def to_label
-    name
-  end
+  default_scope -> { order(:title) }
+
+  scope :completer_scope, lambda{|opts|
+    if opts[:controller] == 'organizations'
+      Organization.completer_scope opts
+    elsif opts[:controller] == 'locations'
+      Location.completer_scope opts
+    end
+  }
 
   def self.locations_enabled
     enabled?(:location)
@@ -48,7 +76,7 @@ class Taxonomy < ActiveRecord::Base
     end
   end
 
-  def self.as_taxonomy org, location
+  def self.as_taxonomy(org, location)
     Organization.as_org org do
       Location.as_location location do
         yield if block_given?
@@ -67,11 +95,30 @@ class Taxonomy < ActiveRecord::Base
     end
   end
 
+  def self.enabled_taxonomies
+    %w(locations organizations).select { |taxonomy| SETTINGS["#{taxonomy}_enabled".to_sym] }
+  end
+
   def self.ignore?(taxable_type)
-    Array.wrap(self.current).each{ |current|
+    Array.wrap(self.current).each do |current|
       return true if current.ignore?(taxable_type)
-    }
+    end
     false
+  end
+
+  # if taxonomy e.g. organization was not set by current context (e.g. Any organization)
+  # then we have to compute what this context mean for current user (in what organizations
+  # is he assigned to)
+  #
+  # if user is not assigned to any organization then empty array is returned which means
+  # that we should use all organizations
+  #
+  # if user is admin we we return the original value since it does not need any additional scoping
+  def self.expand(value)
+    if value.blank? && User.current.present? && !User.current.admin?
+      value = self.send("my_#{self.to_s.underscore.pluralize}").all
+    end
+    value
   end
 
   def ignore?(taxable_type)
@@ -96,11 +143,14 @@ class Taxonomy < ActiveRecord::Base
     new = super
     new.name = ""
     new.users             = users
+    new.environments      = environments
     new.smart_proxies     = smart_proxies
     new.subnets           = subnets
     new.compute_resources = compute_resources
+    new.provisioning_templates = provisioning_templates
     new.media             = media
     new.domains           = domains
+    new.realms            = realms
     new.media             = media
     new.hostgroups        = hostgroups
     new
@@ -117,7 +167,7 @@ class Taxonomy < ActiveRecord::Base
     define_method(key) do
       klass = hash_key_to_class(key)
       if ignore?(klass)
-        return User.unscoped.except_admin.pluck(:id) if klass == "User"
+        return User.unscoped.except_admin.except_hidden.map(&:id) if klass == "User"
         return klass.constantize.pluck(:id)
       else
         taxable_taxonomies.where(:taxable_type => klass).pluck(:taxable_id)
@@ -125,14 +175,59 @@ class Taxonomy < ActiveRecord::Base
     end
   end
 
+  def expire_topbar_cache(sweeper)
+    (users+User.only_admin).each { |u| u.expire_topbar_cache(sweeper) }
+  end
+
+  def parent_params(include_source = false)
+    hash = {}
+    elements = parents_with_params
+    elements.each do |el|
+      el.send("#{type.downcase}_parameters".to_sym).authorized(:view_params).each {|p| hash[p.name] = include_source ? {:value => p.value, :source => sti_name, :safe_value => p.safe_value, :source_name => el.title} : p.value }
+    end
+    hash
+  end
+
+  # returns self and parent parameters as a hash
+  def parameters(include_source = false)
+    hash = parent_params(include_source)
+    self.send("#{type.downcase}_parameters".to_sym).authorized(:view_params).each {|p| hash[p.name] = include_source ? {:value => p.value, :source => sti_name, :safe_value => p.safe_value, :source_name => el.title} : p.value }
+    hash
+  end
+
+  def parents_with_params
+    self.class.sort_by_ancestry(self.class.includes("#{type.downcase}_parameters".to_sym).find(ancestor_ids))
+  end
+
+  def taxonomy_inherited_params_objects
+    # need to pull out the locations to ensure they are sorted first,
+    # otherwise we might be overwriting the hash in the wrong order.
+    parents = parents_with_params
+    parents_parameters = []
+    parents.each do |parent|
+      parents_parameters << parent.send("#{parent.type.downcase}_parameters".to_sym)
+    end
+    parents_parameters
+  end
+
+  def params_objects
+    (self.send("#{type.downcase}_parameters".to_sym).authorized(:view_params) + taxonomy_inherited_params_objects.to_a.reverse!).uniq {|param| param.name}
+  end
+
   private
 
-  delegate :need_to_be_selected_ids, :used_ids, :selected_ids, :used_and_selected_ids, :mismatches, :missing_ids, :check_for_orphans,
+  delegate :need_to_be_selected_ids, :selected_ids, :used_and_selected_ids, :mismatches, :missing_ids, :check_for_orphans,
            :to => :tax_host
+
+  def assign_default_templates
+    Template.where(:default => true).each do |template|
+      self.send((template.class.to_s.underscore.pluralize).to_s) << template
+    end
+  end
 
   def sanitize_ignored_types
     self.ignore_types ||= []
-    self.ignore_types = self.ignore_types.compact.uniq
+    self.ignore_types = self.ignore_types.compact.uniq - ["0"]
   end
 
   def tax_host
@@ -143,4 +238,8 @@ class Taxonomy < ActiveRecord::Base
     key.to_s.gsub(/_ids?\Z/, '').classify
   end
 
+  def assign_taxonomy_to_user
+    return if User.current.nil? || User.current.admin
+    TaxableTaxonomy.create(:taxonomy_id => self.id, :taxable_id => User.current.id, :taxable_type => 'User')
+  end
 end

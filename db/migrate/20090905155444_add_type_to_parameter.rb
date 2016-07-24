@@ -1,9 +1,9 @@
 class AddTypeToParameter < ActiveRecord::Migration
-  def self.up
-    add_column :parameters, :type, :string
+  def up
+    add_column :parameters, :type, :string, :limit => 255
   end
 
-  def self.down
+  def down
     remove_column :parameters, :type
   end
 end

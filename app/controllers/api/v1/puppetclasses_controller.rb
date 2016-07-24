@@ -1,8 +1,8 @@
 module Api
   module V1
     class PuppetclassesController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :setup_search_options, :only => :index
+      before_action :find_resource, :only => %w{show update destroy}
+      before_action :setup_search_options, :only => :index
 
       api :GET, "/puppetclasses/", "List all puppetclasses."
       api :GET, "/hosts/:host_id/puppetclasses/", "List all puppetclasses of a given host."
@@ -12,7 +12,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        values = Puppetclass.search_for(*search_options).paginate(paginate_options).
+        values = Puppetclass.
+          authorized(:view_puppetclasses).
+          search_for(*search_options).paginate(paginate_options).
           select([:name, :id]).
           includes(:lookup_keys)
         render :json => Puppetclass.classes2hash(values.all)
@@ -50,7 +52,6 @@ module Api
       def destroy
         process_response @puppetclass.destroy
       end
-
     end
   end
 end

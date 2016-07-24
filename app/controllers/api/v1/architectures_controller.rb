@@ -1,7 +1,7 @@
 module Api
   module V1
     class ArchitecturesController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/architectures/", "List all architectures."
       param :search, String, :desc => "filter results"
@@ -10,7 +10,9 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @architectures = Architecture.includes(:operatingsystems).
+        @architectures = Architecture.
+          authorized(:view_architectures).
+          includes(:operatingsystems).
           search_for(*search_options).paginate(paginate_options)
       end
 

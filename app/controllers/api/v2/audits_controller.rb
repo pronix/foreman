@@ -1,26 +1,21 @@
 module Api
   module V2
     class AuditsController < V2::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
-      before_filter :setup_search_options, :only => :index
+      before_action :find_resource, :only => %w{show}
 
-      api :GET, "/audits/", "List all audits."
-      api :GET, "/hosts/:host_id/audits/", "List all audits for a given host."
-      param :search, String, :desc => "filter results"
-      param :order, String, :desc => "sort results"
-      param :page, String, :desc => "paginate results"
-      param :per_page, String, :desc => "number of entries per request"
+      api :GET, "/audits/", N_("List all audits")
+      api :GET, "/hosts/:host_id/audits/", N_("List all audits for a given host")
+      param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        Audit.unscoped { @audits = Audit.search_for(*search_options).paginate(paginate_options) }
+        Audit.unscoped { @audits = resource_scope_for_index(:permission => :view_audit_logs) }
       end
 
-      api :GET, "/audits/:id/", "Show an audit"
+      api :GET, "/audits/:id/", N_("Show an audit")
       param :id, :identifier, :required => true
 
       def show
       end
-
     end
   end
 end

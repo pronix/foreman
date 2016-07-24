@@ -1,5 +1,5 @@
 class TrendsController < ApplicationController
-  before_filter :find_trend, :only => %w{show edit update destroy}
+  before_action :find_resource, :only => [:show, :edit, :update, :destroy]
 
   def index
     @trends = Trend.types.includes(:trendable).sort_by {|e| e.type_name.downcase }.paginate(:page => params[:page])
@@ -10,6 +10,7 @@ class TrendsController < ApplicationController
   end
 
   def show
+    render 'trends/_empty_data' if @trend.values.joins(:trend_counters).empty?
   end
 
   def create
@@ -23,8 +24,8 @@ class TrendsController < ApplicationController
   end
 
   def update
-  @trends = Trend.update(params[:trend].keys, params[:trend].values).reject { |p| p.errors.empty? }
-  if @trends.empty?
+    @trends = Trend.update(params[:trend].keys, params[:trend].values).reject { |p| p.errors.empty? }
+    if @trends.empty?
       process_success
     else
       process_error
@@ -33,7 +34,6 @@ class TrendsController < ApplicationController
 
   def edit
   end
-
 
   def destroy
     if @trend.destroy
@@ -47,10 +47,4 @@ class TrendsController < ApplicationController
     TrendImporter.update!
     redirect_to trends_url
   end
-
-  private
-  def find_trend
-    @trend = Trend.find(params[:id])
-  end
-
 end

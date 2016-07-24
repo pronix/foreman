@@ -1,13 +1,17 @@
 class BookmarksController < ApplicationController
-  before_filter :find_by_name, :only => %w{show edit update destroy}
+  include Foreman::Controller::BookmarkCommon
+
+  before_action :find_resource, :only => [:edit, :update, :destroy]
 
   def index
-    @bookmarks = Bookmark.paginate(:page => params[:page])
+    @bookmarks = resource_base.paginate(:page => params[:page])
   end
 
   def new
     @bookmark            = Bookmark.new
-    @bookmark.name       = params[:query].to_s.strip.split(/\s| = |!|~|>|</)[0]
+    query                = params[:query].to_s.strip
+    @bookmark.name       = query.split(/\s| = |!|~|>|</)[0]
+    @bookmark.query      = query
     @bookmark.controller = params[:kontroller]
   end
 

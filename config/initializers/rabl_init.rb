@@ -8,9 +8,8 @@ module Rabl
   end
 
   class Engine
-
     def api_version
-      response.headers["Foreman_api_version"]
+      respond_to?(:response) ? response.headers["Foreman_api_version"] : '1'
     end
 
     def default_options
@@ -29,13 +28,12 @@ module Rabl
     # 2) custom  - pass ?params[:root_name]=custom_name in URL
     def data_name(data_token)
       # custom object root
-      return params['root_name'] if params['root_name'].present? && !['false', false].include?(params['root_name'])
+      return params['root_name'] if respond_to?(:params) && params['root_name'].present? && !['false', false].include?(params['root_name'])
       # no object root for v2
-      return nil if api_version.to_i > 1 || ['false', false].include?(params['root_name'])
+      return nil if !respond_to?(:params) || api_version.to_i > 1 || ['false', false].include?(params['root_name'])
       # otherwise return super since v1 has object root (config.include_child_root = true)
       super
     end
-
   end
 end
 
@@ -58,9 +56,9 @@ Rabl.configure do |config|
   # config.include_child_root = true
   # config.enable_json_callbacks = false
   # config.xml_options = { :dasherize  => true, :skip_types => false }
-  # config.view_paths = []
+  config.view_paths << Rails.root.join('app', 'views')
   # config.raise_on_missing_attribute = true # Defaults to false
   # config.replace_nil_values_with_empty_strings = true # Defaults to false
   config.use_controller_name_as_json_root = false
-  config.json_root_default_name = :results  #used only if use_controller_name_as_json_root = false
+  config.json_root_default_name = :results #used only if use_controller_name_as_json_root = false
 end

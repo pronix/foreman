@@ -1,12 +1,12 @@
 class CreateTrends < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :trends do |t|
-      t.string :trendable_type
+      t.string :trendable_type, :limit => 255
       t.integer :trendable_id
-      t.string :name
-      t.string :type
-      t.string :fact_value
-      t.string :fact_name
+      t.string :name, :limit => 255
+      t.string :type, :limit => 255
+      t.string :fact_value, :limit => 255
+      t.string :fact_name, :limit => 255
 
       t.timestamps
     end
@@ -15,7 +15,7 @@ class CreateTrends < ActiveRecord::Migration
     add_index :trends, :fact_value
   end
 
-  def self.down
+  def down
     remove_index :trends, :type
     remove_index :trends, [:trendable_type, :trendable_id]
     remove_index :trends, :fact_value

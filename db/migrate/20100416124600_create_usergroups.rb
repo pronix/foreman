@@ -1,7 +1,7 @@
 class CreateUsergroups < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :usergroups do |t|
-      t.string :name
+      t.string :name, :limit => 255
       t.timestamps
     end
     create_table :usergroup_members do |t|
@@ -10,7 +10,7 @@ class CreateUsergroups < ActiveRecord::Migration
     end
   end
 
-  def self.down
+  def down
     drop_table :members
     drop_table :usergroups
   end

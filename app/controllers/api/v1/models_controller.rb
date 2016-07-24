@@ -1,7 +1,7 @@
 module Api
   module V1
     class ModelsController < V1::BaseController
-      before_filter :find_resource, :only => %w{show update destroy}
+      before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/models/", "List all models."
       param :search, String, :desc => "filter results"
@@ -10,7 +10,10 @@ module Api
       param :per_page, String, :desc => "number of entries per request"
 
       def index
-        @models = Model.search_for(*search_options).paginate(paginate_options)
+        @models = Model.
+          authorized(:view_models).
+          search_for(*search_options).
+          paginate(paginate_options)
       end
 
       api :GET, "/models/:id/", "Show a model."

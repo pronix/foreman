@@ -3,13 +3,15 @@ module AuditExtensions
   extend ActiveSupport::Concern
 
   included do
+    belongs_to :user, :class_name => 'User'
     belongs_to :search_users, :class_name => 'User', :foreign_key => :user_id
-    belongs_to :search_hosts, :class_name => 'Host', :foreign_key => :auditable_id, :conditions => "auditable_type = 'Host'"
-    belongs_to :search_hostgroups, :class_name => 'Hostgroup', :foreign_key => :auditable_id, :conditions => "auditable_type = 'Hostgroup'"
-    belongs_to :search_parameters, :class_name => 'Parameter', :foreign_key => :auditable_id, :conditions => "auditable_type = 'Parameter'"
-    belongs_to :search_templates, :class_name => 'ConfigTemplate', :foreign_key => :auditable_id, :conditions => "auditable_type = 'ConfigTemplate'"
-    belongs_to :search_os, :class_name => 'Operatingsystem', :foreign_key => :auditable_id, :conditions => "auditable_type = 'Operatingsystem'"
-    belongs_to :search_class, :class_name => 'Puppetclass', :foreign_key => :auditable_id, :conditions => "auditable_type = 'Puppetclass'"
+    belongs_to :search_hosts, -> { where(:audits => { :auditable_type => 'Host' }) },
+      :class_name => 'Host', :foreign_key => :auditable_id
+    belongs_to :search_hostgroups, :class_name => 'Hostgroup', :foreign_key => :auditable_id
+    belongs_to :search_parameters, :class_name => 'Parameter', :foreign_key => :auditable_id
+    belongs_to :search_templates, :class_name => 'ProvisioningTemplate', :foreign_key => :auditable_id
+    belongs_to :search_os, :class_name => 'Operatingsystem', :foreign_key => :auditable_id
+    belongs_to :search_class, :class_name => 'Puppetclass', :foreign_key => :auditable_id
 
     scoped_search :on => [:username, :remote_address], :complete_value => true
     scoped_search :on => :audited_changes, :rename => 'changes'
@@ -17,24 +19,29 @@ module AuditExtensions
     scoped_search :on => :action, :complete_value => { :create => 'create', :update => 'update', :delete => 'destroy' }
     scoped_search :on => :auditable_type, :complete_value => { :host => 'Host', :parameter => 'Parameter', :architecture => 'Architecture',
                                                                :puppetclass => 'Puppetclass', :os => 'Operatingsystem', :hostgroup => 'Hostgroup',
-                                                               :template => "ConfigTemplate" }, :rename => :type
+                                                               :template => "ProvisioningTemplate" }, :rename => :type
 
     scoped_search :in => :search_parameters, :on => :name, :complete_value => true, :rename => :parameter, :only_explicit => true
     scoped_search :in => :search_templates, :on => :name, :complete_value => true, :rename => :template, :only_explicit => true
     scoped_search :in => :search_os, :on => :name, :complete_value => true, :rename => :os, :only_explicit => true
+    scoped_search :in => :search_os, :on => :title, :complete_value => true, :rename => :os_title, :only_explicit => true
     scoped_search :in => :search_class, :on => :name, :complete_value => true, :rename => :puppetclass, :only_explicit => true
     scoped_search :in => :search_hosts, :on => :name, :complete_value => true, :rename => :host, :only_explicit => true
     scoped_search :in => :search_hostgroups, :on => :name, :complete_value => true, :rename => :hostgroup, :only_explicit => true
+    scoped_search :in => :search_hostgroups, :on => :title, :complete_value => true, :rename => :hostgroup_title, :only_explicit => true
     scoped_search :in => :search_users, :on => :login, :complete_value => true, :rename => :user, :only_explicit => true
 
-    before_save :ensure_username, :ensure_audtiable_and_associated_name
+    before_save :ensure_username, :ensure_auditable_and_associated_name
     after_validation :fix_auditable_type
+
+    include Authorizable
   end
 
   private
 
   def ensure_username
-    self.username ||= User.current.to_s rescue ""
+    self.user_as_model = User.current
+    self.username = User.current.try(:to_label)
   end
 
   def fix_auditable_type
@@ -45,7 +52,7 @@ module AuditExtensions
     self.associated_type = auditable.type if auditable_type == "Taxonomy" && auditable
   end
 
-  def ensure_audtiable_and_associated_name
+  def ensure_auditable_and_associated_name
     self.auditable_name  ||= self.auditable.try(:to_label)
     self.associated_name ||= self.associated.try(:to_label)
   end

@@ -1,13 +1,14 @@
 class LookupValuesController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
-  before_filter :find_by_id, :except => [:index, :create]
-  before_filter :setup_search_options, :only => :index
+  before_action :find_resource, :only => [:update, :destroy]
+  before_action :setup_search_options, :only => :index
 
   def index
     begin
       values = LookupValue.search_for(params[:search], :order => params[:order])
     rescue => e
       error e.to_s
+      Foreman::Logging.exception("Failed loading lookup values", e)
       values = LookupValue.search_for ""
     end
     @lookup_values = values.paginate(:page => params[:page])
@@ -37,11 +38,4 @@ class LookupValuesController < ApplicationController
       process_error
     end
   end
-
-  private
-
-  def find_by_id
-    @lookup_value = LookupValue.find(params[:id])
-  end
-
 end

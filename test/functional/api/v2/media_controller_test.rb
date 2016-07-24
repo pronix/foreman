@@ -1,10 +1,9 @@
 require 'test_helper'
 
 class Api::V2::MediaControllerTest < ActionController::TestCase
-
   new_medium = {
     :name => "new medium",
-    :path => "http://www.newmedium.com/",
+    :path => "http://www.newmedium.com/"
   }
 
   test "should get index" do
@@ -33,16 +32,14 @@ class Api::V2::MediaControllerTest < ActionController::TestCase
 
   test "should update medium" do
     name = Medium.first.name
-    put :update, { :id => Medium.first.id.to_param, :name => "#{name}".to_param }
+    put :update, { :id => Medium.first.id.to_param, :name => name.to_s.to_param }
     assert_response :success
   end
 
   test "should destroy medium" do
-    id = Medium.first.id
     assert_difference('Medium.count', -1) do
       delete :destroy, { :id => media(:unused).id.to_param }
     end
     assert_response :success
   end
-
 end

@@ -1,12 +1,12 @@
 require 'test_helper'
 
 class Api::V2::ImagesControllerTest < ActionController::TestCase
-
   def valid_attrs
-    { :name                => 'TestImage', :username => 'ec2-user', :uuid => 'abcdef',
+    { :name                => 'TestImage', :username => 'ec2-user', :uuid => 'abcdef', :password => "password",
       :operatingsystem_id  => Operatingsystem.first.id,
       :compute_resource_id => ComputeResource.first.id,
       :architecture_id     => Architecture.first.id,
+      :user_data           => true
     }
   end
 
@@ -29,7 +29,7 @@ class Api::V2::ImagesControllerTest < ActionController::TestCase
     assert_difference('Image.count') do
       post :create, { :compute_resource_id => images(:two).compute_resource_id, :image => valid_attrs }
     end
-    assert_response :success
+    assert_response :created
   end
 
   test "should update image" do
@@ -43,5 +43,4 @@ class Api::V2::ImagesControllerTest < ActionController::TestCase
     end
     assert_response :success
   end
-
 end

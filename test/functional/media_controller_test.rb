@@ -1,42 +1,35 @@
 require 'test_helper'
 
 class MediaControllerTest < ActionController::TestCase
-  def test_index
-    get :index, {}, set_session_user
-    assert_template 'index'
+  setup do
+    @model = Medium.first
   end
 
-  def test_new
-    get :new, {}, set_session_user
-    assert_template 'new'
-  end
+  basic_index_test
+  basic_new_test
+  basic_edit_test
 
   def test_create_invalid
     Medium.any_instance.stubs(:valid?).returns(false)
-    post :create, {}, set_session_user
+    post :create, {:medium => {:name => nil}}, set_session_user
     assert_template 'new'
   end
 
   def test_create_valid
     Medium.any_instance.stubs(:valid?).returns(true)
-    post :create, {}, set_session_user
+    post :create, {:medium => {:name => "MyMedia"}}, set_session_user
     assert_redirected_to media_url
-  end
-
-  def test_edit
-    get :edit, {:id => Medium.first}, set_session_user
-    assert_template 'edit'
   end
 
   def test_update_invalid
     Medium.any_instance.stubs(:valid?).returns(false)
-    put :update, {:id => Medium.first}, set_session_user
+    put :update, {:id => Medium.first, :medium => {:name => nil}}, set_session_user
     assert_template 'edit'
   end
 
   def test_update_valid
     Medium.any_instance.stubs(:valid?).returns(true)
-    put :update, {:id => Medium.first}, set_session_user
+    put :update, {:id => Medium.first, :medium => {:name => "MyUpdatedMedia"}}, set_session_user
     assert_redirected_to media_url
   end
 
@@ -49,7 +42,7 @@ class MediaControllerTest < ActionController::TestCase
 
   def setup_user
     @request.session[:user] = users(:one).id
-    users(:one).roles       = [Role.find_by_name('Anonymous'), Role.find_by_name('Viewer')]
+    users(:one).roles       = [Role.default, Role.find_by_name('Viewer')]
   end
 
   test 'user with viewer rights should fail to edit a medium' do

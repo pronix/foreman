@@ -1,12 +1,11 @@
 class Gentoo < Operatingsystem
-
   PXEFILES = {}
 
-  def mediumpath host
+  class << self
+    delegate :model_name, :to => :superclass
   end
 
-  def class
-    Operatingsystem
+  def mediumpath(host)
   end
 
   def pxe_type
@@ -18,4 +17,7 @@ class Gentoo < Operatingsystem
   def url_for_boot(file)
   end
 
+  def display_family
+    "Gentoo"
+  end
 end

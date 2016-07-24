@@ -1,11 +1,9 @@
+@import "mixin";
+
 .stats-well {
  border: 1px solid #d7d7d7;
- -moz-border-radius: 3px;-webkit-border-radius: 3px;-o-border-radius: 3px;-ms-border-radius: 3px;-khtml-border-radius: 3px;border-radius: 3px;
- background-color: #f9f8f8;
- background-image: url('data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0idXRmLTgi…pZHRoPSIxMDAlIiBoZWlnaHQ9IjEwMCUiIGZpbGw9InVybCgjZ3JhZCkiIC8+PC9zdmc+IA==');
  background-size: 100%;
- background-image: -webkit-gradient(linear,50% 0,50% 100%,color-stop(0%,#f7f7f7),color-stop(100%,#eee));background-image: -webkit-linear-gradient(#f7f7f7,#eee);background-image: -moz-linear-gradient(#f7f7f7,#eee);background-image: -o-linear-gradient(#f7f7f7,#eee);background-image: -ms-linear-gradient(#f7f7f7,#eee);background-image: linear-gradient(#f7f7f7,#eee);
- padding: 8px;
+ padding: 15px;
  min-width: 280px;
  min-height: 100px;
  margin-bottom: 15px;
@@ -15,22 +13,37 @@
 }
 
 .fact_chart {
-  min-height: 400px !important;
-  width: 560px !important;
+  float: left;
+  min-height: 450px !important;
+  width: 485px !important;
   padding: 0 !important;
   text-align: center;
-  font-weight: bold;
   overflow: hidden;
 }
 
+.legend {
+  margin-left: 485px;
+  margin-top: 10px;
+  height: 450px;
+  width: 110px;
+  text-align: center;
+  overflow-y: auto;
+  overflow-x: hidden;
+  .legendLabel{
+    text-align: left;
+  }
+}
 #statistics{
+  margin: 0px auto;
+  text-align: left;
+  width: 90%;
   .stats-well{
     float: left;
     padding: 10px 20px;
     margin: 0 0 20px 20px;
     &:hover{
       border-color:#0069d6;
-      -webkit-box-shadow:0 1px 4px rgba(0, 105, 214, 0.25);-moz-box-shadow:0 1px 4px rgba(0, 105, 214, 0.25);box-shadow:0 1px 4px rgba(0, 105, 214, 0.25);
+      @include box-shadow(0 1px 4px rgba(0, 105, 214, 0.25));
     }
   }
 }
@@ -45,17 +58,26 @@
 
 .statistics-bar{
   width: 260px;
-  height: 330px;
-  margin: 0px auto 10px auto;
+  height: 305px;
+  margin: 0px auto 27px auto;
 }
 
 .statistics-pie{
   width: 450px;
   height: 450px;
-  margin: 20px auto 20px auto;
+  margin: 12px auto;
   &.small{
     width: 240px;
     height: 240px;
+  }
+}
+
+.modal-dialog .statistics-pie{
+  margin-bottom: 46px;
+  .pieLabel{
+    margin-left: -30px;
+    margin-top: -10px;
+    font-weight: bold;
   }
 }
 
@@ -73,7 +95,8 @@
   padding: 2px;
   background-color: #FFF;
   opacity: 0.8;
-  -moz-border-radius: 5px; -webkit-border-radius: 5px; -khtml-border-radius: 5px; border-radius: 5px;
+  z-index: 100;
+  border-radius: 5px;
   b{
     color: black;
     font-weight: bold;
@@ -83,28 +106,26 @@
 .xAxis > .tickLabel
 {
  margin-top:15px;
- -moz-transform:rotate(-45deg);
- -o-transform:rotate(-45deg);
  -webkit-transform:rotate(-45deg);
- filter: progid:DXImageTransform.Microsoft.BasicImage(rotation=3);
+ transform:rotate(-45deg);
 }
 
 .pie-title{
  color: #626262;
 }
 
-.pie-labels{
+.pieLabel{
  text-align:center;
- padding:2px;
- font-weight: bold;
- text-wrap: normal;
- color: white;
+ font-size: 16px;
+ .percent{
+   font-size: 28px;
+ }
 }
 
 .statistics-pie.small .overlay {
-  background: url(/assets/pie_overlay.png) no-repeat;
+  background: image-url('pie_overlay.png') no-repeat;
   background-size: cover;
-  -ms-behavior: url(/assets/background-size.htc);
+  -ms-behavior: asset-url('background-size.htc');
   z-index: 1;
 }
 
@@ -115,13 +136,19 @@
   font-size: 14px;
 }
 
-#host-show .statistics-chart{
-  height: 230px;
+#host-show{
+ .statistics-chart{
+    height: 230px;
+  }
+  .chart{
+    height: 250px;
+  }
 }
 
 .reset-zoom{
-  float: right;
+  position: absolute;
 }
+
 #legendContainer table{
   width:  100%;
 }

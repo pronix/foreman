@@ -1,8 +1,8 @@
 class CreatePuppetclasses < ActiveRecord::Migration
-  def self.up
+  def up
     create_table :puppetclasses do |t|
-      t.string :name
-      t.string :nameindicator
+      t.string :name, :limit => 255
+      t.string :nameindicator, :limit => 255
       t.integer :operatingsystem_id
 
       t.timestamps
@@ -18,7 +18,7 @@ class CreatePuppetclasses < ActiveRecord::Migration
     end
   end
 
-  def self.down
+  def down
     drop_table :puppetclasses
     drop_table :hosts_puppetclasses
     drop_table :operatingsystems_puppetclasses

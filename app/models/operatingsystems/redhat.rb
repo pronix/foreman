@@ -1,25 +1,23 @@
 class Redhat < Operatingsystem
-
   PXEFILES = {:kernel => "vmlinuz", :initrd => "initrd.img"}
+
+  class << self
+    delegate :model_name, :to => :superclass
+  end
 
   # outputs kickstart installation medium based on the medium type (NFS or URL)
   # it also convert the $arch string to the current host architecture
-  def mediumpath host
-    uri    = medium_uri(host)
+  def mediumpath(host)
+    uri = medium_uri(host)
 
     case uri.scheme
       when 'http', 'https', 'ftp'
-         "url --url #{uri}"
+        "url --url #{uri}"
       else
         server = uri.select(:host, :port).compact.join(':')
         dir    = uri.select(:path, :query).compact.join('?')
         "nfs --server #{server} --dir #{dir}"
     end
-  end
-
-  # Override the class representation, as this breaks many rails helpers
-  def class
-    Operatingsystem
   end
 
   # The PXE type to use when generating actions and evaluating attributes. jumpstart, kickstart and preseed are currently supported.
@@ -35,4 +33,18 @@ class Redhat < Operatingsystem
     pxedir + "/" + PXEFILES[file]
   end
 
+  def display_family
+    "Red Hat"
+  end
+
+  def self.shorten_description(description)
+    return "" if description.blank?
+    s=description
+    s.gsub!('Red Hat Enterprise Linux','RHEL')
+    s.gsub!('release','')
+    s.gsub!(/\(.+?\)/,'')
+    s.squeeze! " "
+    s.strip!
+    s.blank? ? description : s
+  end
 end

@@ -2,11 +2,16 @@ module Foreman::Model
   class EC2 < ComputeResource
     has_one :key_pair, :foreign_key => :compute_resource_id, :dependent => :destroy
 
-    delegate :subnets, :to => :client
+    delegate :flavors, :subnets, :to => :client
+    delegate :security_groups, :flavors, :zones, :to => :self, :prefix => 'available'
     validates :user, :password, :presence => true
 
     after_create :setup_key_pair
     after_destroy :destroy_key_pair
+
+    alias_attribute :access_key, :user
+    alias_attribute :region, :url
+    attr_accessible :access_key, :region
 
     def to_label
       "#{name} (#{region}-#{provider_friendly_name})"
@@ -14,6 +19,10 @@ module Foreman::Model
 
     def provided_attributes
       super.merge({ :ip => :vm_ip_address })
+    end
+
+    def self.available?
+      Fog::Compute.providers.include?(:aws)
     end
 
     def self.model_name
@@ -24,14 +33,14 @@ module Foreman::Model
       [:image]
     end
 
-    def find_vm_by_uuid uuid
-      client.servers.get(uuid)
+    def find_vm_by_uuid(uuid)
+      super
     rescue Fog::Compute::AWS::Error
       raise(ActiveRecord::RecordNotFound)
     end
 
-    def create_vm args = { }
-      args = vm_instance_defaults.merge(args.to_hash.symbolize_keys)
+    def create_vm(args = { })
+      args = vm_instance_defaults.merge(args.to_hash.symbolize_keys).deep_symbolize_keys
       if (name = args[:name])
         args.merge!(:tags => {:Name => name})
       end
@@ -42,17 +51,21 @@ module Foreman::Model
       end
       args[:groups].reject!(&:empty?) if args.has_key?(:groups)
       args[:security_group_ids].reject!(&:empty?) if args.has_key?(:security_group_ids)
+      args[:associate_public_ip] = subnet_implies_is_vpc?(args) && args[:managed_ip] == 'public'
       super(args)
+    rescue Fog::Errors::Error => e
+      Foreman::Logging.exception("Unhandled EC2 error", e)
+      raise e
     end
 
-    def security_groups vpc=nil
+    def security_groups(vpc = nil)
       groups = client.security_groups
       groups.reject! { |sg| sg.vpc_id != vpc } if vpc
       groups
     end
 
     def regions
-      return [] if user.blank? or password.blank?
+      return [] if user.blank? || password.blank?
       @regions ||= client.describe_regions.body["regionInfo"].map { |r| r["regionName"] }
     end
 
@@ -60,23 +73,11 @@ module Foreman::Model
       @zones ||= client.describe_availability_zones.body["availabilityZoneInfo"].map { |r| r["zoneName"] if r["regionName"] == region }.compact
     end
 
-    def flavors
-      client.flavors
-    end
-
-    def test_connection options = {}
+    def test_connection(options = {})
       super
       errors[:user].empty? and errors[:password].empty? and regions
     rescue Fog::Compute::AWS::Error => e
       errors[:base] << e.message
-    end
-
-    def region= value
-      self.url = value
-    end
-
-    def region
-      @region ||= url.present? ? url : nil
     end
 
     def console(uuid)
@@ -96,10 +97,22 @@ module Foreman::Model
     end
 
     def associated_host(vm)
-      Host.my_hosts.where(:ip => [vm.public_ip_address, vm.private_ip_address]).first
+      associate_by("ip", [vm.public_ip_address, vm.private_ip_address])
+    end
+
+    def user_data_supported?
+      true
+    end
+
+    def image_exists?(image)
+      client.images.get(image).present?
     end
 
     private
+
+    def subnet_implies_is_vpc? args
+      args[:subnet_id].present?
+    end
 
     def client
       @client ||= ::Fog::Compute.new(:provider => "AWS", :aws_access_key_id => user, :aws_secret_access_key => password, :region => region)
@@ -111,7 +124,7 @@ module Foreman::Model
       key = client.key_pairs.create :name => "foreman-#{id}#{Foreman.uuid}"
       KeyPair.create! :name => key.name, :compute_resource_id => self.id, :secret => key.private_key
     rescue => e
-      logger.warn "failed to generate key pair"
+      Foreman::Logging.exception("Failed to generate key pair", e)
       destroy_key_pair
       raise
     end

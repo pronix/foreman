@@ -1,27 +1,38 @@
 require "resolv"
 # This models a DNS domain and so represents a site.
 class Domain < ActiveRecord::Base
-  include Authorization
+  include Authorizable
+  extend FriendlyId
+  friendly_id :name
   include Taxonomix
+  include StripLeadingAndTrailingDot
+  include Parameterizable::ByIdName
 
-  has_many_hosts
+  audited :allow_mass_assignment => true
+  attr_accessible :name, :fullname, :dns_id, :domain_parameters_attributes
+
+  validates_lengths_from_database
   has_many :hostgroups
   #order matters! see https://github.com/rails/rails/issues/670
-  before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups, :subnets)
-  has_many :subnet_domains, :dependent => :destroy
+  before_destroy EnsureNotUsedBy.new(:interfaces, :hostgroups, :subnets)
+  has_many :subnet_domains, :dependent => :destroy, :inverse_of => :domain
   has_many :subnets, :through => :subnet_domains
   belongs_to :dns, :class_name => "SmartProxy"
-  has_many :domain_parameters, :dependent => :destroy, :foreign_key => :reference_id
+  has_many :domain_parameters, :dependent => :destroy, :foreign_key => :reference_id, :inverse_of => :domain
   has_many :parameters, :dependent => :destroy, :foreign_key => :reference_id, :class_name => "DomainParameter"
-  has_and_belongs_to_many :users, :join_table => "user_domains"
   has_many :interfaces, :class_name => 'Nic::Base'
+  has_many :primary_interfaces, -> { where(:primary => true) }, :class_name => 'Nic::Base'
+  has_many :hosts, :through => :interfaces
+  has_many :primary_hosts, :through => :primary_interfaces, :source => :host
 
-  accepts_nested_attributes_for :domain_parameters, :reject_if => lambda { |a| a[:value].blank? }, :allow_destroy => true
+  accepts_nested_attributes_for :domain_parameters, :allow_destroy => true
+  include ParameterValidators
   validates :name, :presence => true, :uniqueness => true
   validates :fullname, :uniqueness => true, :allow_blank => true, :allow_nil => true
+  validates :dns, :proxy_features => { :feature => "DNS", :message => N_('does not have the DNS feature') }
 
   scoped_search :on => [:name, :fullname], :complete_value => true
-  scoped_search :in => :domain_parameters,    :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
+  scoped_search :in => :domain_parameters, :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
 
   # with proc support, default_scope can no longer be chained
   # include all default scoping here
@@ -33,29 +44,6 @@ class Domain < ActiveRecord::Base
 
   class Jail < Safemode::Jail
     allow :name, :fullname
-  end
-
-  def to_param
-    "#{id}-#{name.parameterize}"
-  end
-
-  def enforce_permissions operation
-    # We get called again with the operation being set to create
-    return true if operation == "edit" and new_record?
-
-    current = User.current
-
-    if current.allowed_to?("#{operation}_domains".to_sym)
-      # If you can create domains then you can create them anywhere
-      return true if operation == "create"
-      # However if you are editing or destroying and you have a domain list then you are constrained
-      if current.domains.empty? or current.domains.map(&:id).include? self.id
-        return true
-      end
-    end
-
-    errors.add(:base, _("You do not have permission to %s this domain") % operation)
-    false
   end
 
   # return the primary name server for our domain based on DNS lookup
@@ -74,11 +62,24 @@ class Domain < ActiveRecord::Base
   end
 
   def proxy
-    ProxyAPI::DNS.new(:url => dns.url) if dns and !dns.url.blank?
+    ProxyAPI::DNS.new(:url => dns.url) if dns && !dns.url.blank?
   end
 
-  def lookup query
+  def lookup(query)
     Net::DNS.lookup query, proxy, resolver
   end
 
+  def dot_strip_attrs
+    ['name']
+  end
+
+  # overwrite method in taxonomix, since domain is not direct association of host anymore
+  def used_taxonomy_ids(type)
+    return [] if new_record?
+    Host::Base.joins(:primary_interface).where(:nics => {:domain_id => id}).uniq.pluck(type).compact
+  end
+
+  def hosts_count
+    Host::Managed.authorized(:view_hosts).joins(:primary_interface).where(:nics => {:domain_id => id}).size
+  end
 end
