@@ -1,4 +1,7 @@
-
+$(document).ready(function() {
+  $('#host_name').select();
+  $('#host_name').focus();
+})
 
 function remove_interface(interface_id) {
   $('#interface'+interface_id).remove();
@@ -24,7 +27,7 @@ function show_interface_modal(modal_content) {
 
   modal_window.find('.modal-body').html('');
   modal_window.find('.modal-body').append(modal_content.contents());
-  modal_window.find('.modal-title').html(__('Interface') + ' ' + String(identifier));
+  modal_window.find('.modal-title').text(__('Interface') + ' ' + String(identifier));
   modal_window.modal({'show': true});
 
   modal_window.find('a[rel="popover-modal"]').popover();
@@ -155,10 +158,10 @@ function update_interface_row(row, interface_form) {
   type += '</div>'
   row.find('.type').html(type);
 
-  row.find('.identifier').html(interface_form.find('.interface_identifier').val());
-  row.find('.mac').html(interface_form.find('.interface_mac').val());
-  row.find('.ip').html(interface_form.find('.interface_ip').val());
-  row.find('.ip6').html(interface_form.find('.interface_ip6').val());
+  row.find('.identifier').text(interface_form.find('.interface_identifier').val());
+  row.find('.mac').text(interface_form.find('.interface_mac').val());
+  row.find('.ip').text(interface_form.find('.interface_ip').val());
+  row.find('.ip6').text(interface_form.find('.interface_ip6').val());
 
   var flags = '', primary_class = '', provision_class = '';
   if (interface_form.find('.interface_primary').is(':checked'))
@@ -177,7 +180,7 @@ function update_interface_row(row, interface_form) {
 
   row.find('.flags').html(flags);
 
-  row.find('.fqdn').html(fqdn(
+  row.find('.fqdn').text(fqdn(
     interface_form.find('.interface_name').val(),
     interface_form.find('.interface_domain option:selected').text()
   ));
@@ -321,3 +324,21 @@ function update_fqdn() {
 
   $('#hostFQDN').text(name);
 }
+
+$(document).on('change', '.interface_mac', function (event) {
+  if (event.target.id == $('#interfaceModal').find('.interface_mac').attr('id')) {
+    var interface = $('#interfaceModal').find('.interface_mac');
+    var mac = interface.val();
+    var baseurl = interface.attr('data-url');
+    $.ajax({
+      type: "GET",
+      url: baseurl + '?mac=' + mac,
+      success: function(response, status, xhr) {
+        if ($('#host_name').val() == '')
+          $('#host_name').val(response.name);
+        if ($('#interfaceModal').find('.interface_name').val() == '')
+          $('#interfaceModal').find('.interface_name').val(response.name);
+      }
+    });
+  }
+});

@@ -2,6 +2,7 @@ group :test do
   gem 'mocha', '~> 1.1'
   gem 'single_test', '~> 0.6'
   gem 'minitest', '~> 5.1.0'
+  gem 'minitest-optional_retry', '~> 0.0', :require => false
   gem 'minitest-spec-rails', '~> 5.3'
   gem 'ci_reporter_minitest', :require => false
   gem 'capybara', '~> 2.5', :require => false
@@ -12,6 +13,6 @@ group :test do
   gem 'rubocop-checkstyle_formatter', '~> 0.2'
   gem "poltergeist", :require => false
   gem 'test_after_commit', '>= 0.4', '< 2.0'
-  gem 'shoulda-matchers', '2.8.0'
+  gem 'shoulda-matchers', '~> 3.0'
   gem 'shoulda-context', '~> 1.2'
 end

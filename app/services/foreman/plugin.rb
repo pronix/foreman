@@ -92,7 +92,8 @@ module Foreman #:nodoc:
     end
 
     def_field :name, :description, :url, :author, :author_url, :version, :path
-    attr_reader :id, :logging, :default_roles, :provision_methods, :compute_resources, :to_prepare_callbacks
+    attr_reader :id, :logging, :default_roles, :provision_methods, :compute_resources, :to_prepare_callbacks,
+                :permissions, :facets
 
     def initialize(id)
       @id = id.to_sym
@@ -102,6 +103,10 @@ module Foreman #:nodoc:
       @compute_resources = []
       @to_prepare_callbacks = []
       @template_labels = {}
+      @parameter_filters = {}
+      @smart_proxies = {}
+      @permissions = {}
+      @controller_action_scopes = {}
     end
 
     def after_initialize
@@ -215,14 +220,16 @@ module Foreman #:nodoc:
     #   class to which this permissions is related, rest of options is passed
     #   to AccessControl
     def permission(name, hash, options = {})
-      return false if pending_migrations
+      @permissions[name] = options.slice(:resource_type)
 
       options[:engine] ||= self.id.to_s
-      Permission.where(:name => name).first_or_create(:resource_type => options[:resource_type])
       options.merge!(:security_block => @security_block)
       Foreman::AccessControl.map do |map|
         map.permission name, hash, options
       end
+
+      return false if pending_migrations || Rails.env.test?
+      Permission.where(:name => name).first_or_create(:resource_type => options[:resource_type])
     end
 
     # Add a new role if it doesn't exist
@@ -242,7 +249,12 @@ module Foreman #:nodoc:
       pending_migrations = ActiveRecord::Migrator.new(:up, migration_paths).
         pending_migrations
 
-      pending_migrations.size > 0
+      return false if pending_migrations.empty?
+      migration_names = pending_migrations.take(5).map(&:name).join(', ')
+      Rails.logger.debug(
+        "There are #{pending_migrations.size} pending migrations: "\
+        "#{migration_names}#{pending_migrations.size > 5 ? '...' : ''}")
+      true
     end
 
     # List of helper methods allowed for templates in safe mode
@@ -325,7 +337,9 @@ module Foreman #:nodoc:
     end
 
     def register_facet(klass, name, &block)
-      Facets.register(klass, name, &block)
+      # Save the entry in case of reloading
+      @facets ||= []
+      @facets << Facets.register(klass, name, &block)
     end
 
     def in_to_prepare(&block)
@@ -339,6 +353,37 @@ module Foreman #:nodoc:
 
     def get_template_labels
       @template_labels
+    end
+
+    def parameter_filter(klass, *args, &block)
+      @parameter_filters[klass.name] ||= []
+      @parameter_filters[klass.name] << (block_given? ? args + [block] : args)
+    end
+
+    def parameter_filters(klass)
+      @parameter_filters.fetch(klass.is_a?(Class) ? klass.name : klass, [])
+    end
+
+    def smart_proxy_for(klass, name, options)
+      @smart_proxies[klass.name] ||= {}
+      @smart_proxies[klass.name][name] = options
+      klass.register_smart_proxy(name, options)
+    end
+
+    def smart_proxies(klass)
+      @smart_proxies.fetch(klass.name, {})
+    end
+
+    def add_controller_action_scope(controller_class, action, &block)
+      controller_actions = @controller_action_scopes[controller_class.name] || {}
+      actions_list = controller_actions[action] || []
+      actions_list << block
+      controller_actions[action] = actions_list
+      @controller_action_scopes[controller_class.name] = controller_actions
+    end
+
+    def action_scopes_hash_for(controller_class)
+      @controller_action_scopes[controller_class.name] || {}
     end
 
     private

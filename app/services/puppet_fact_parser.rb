@@ -2,12 +2,12 @@ class PuppetFactParser < FactParser
   attr_reader :facts
 
   def operatingsystem
-    orel = os_release
+    orel = os_release.dup
 
     if os_name == "Archlinux"
       # Archlinux is rolling release, so it has no release. We use 1.0 always
       args = {:name => os_name, :major => "1", :minor => "0"}
-      os = Operatingsystem.where(args).first || Operatingsystem.new(args)
+      os = Operatingsystem.find_or_initialize_by(args)
     elsif orel.present?
       if os_name == "Debian" && orel[/testing|unstable/i]
         case facts[:lsbdistcodename]
@@ -26,26 +26,34 @@ class PuppetFactParser < FactParser
         orel = majorjunos + "." + minorjunos
       elsif os_name[/FreeBSD/i]
         orel.gsub!(/\-RELEASE\-p[0-9]+/, '')
+      elsif os_name[/Solaris/i]
+        orel.gsub!(/_u/, '.')
       end
-      major, minor = orel.split(".")
-      major.to_s.gsub!(/\D/, '') unless is_numeric? major
-      minor.to_s.gsub!(/\D/, '') unless is_numeric? minor
-      args = {:name => os_name, :major => major.to_s, :minor => minor.to_s}
-      os = Operatingsystem.where(args).first || Operatingsystem.create!(args)
+      major, minor = orel.split('.', 2)
+      major = major.to_s.gsub(/\D/, '')
+      minor = minor.to_s.gsub(/[^\d\.]/, '')
+      args = {:name => os_name, :major => major, :minor => minor}
+      os = Operatingsystem.find_or_initialize_by(args)
       os.release_name = facts[:lsbdistcodename] if facts[:lsbdistcodename] && (os_name[/debian|ubuntu/i] || os.family == 'Debian')
     else
-      os = Operatingsystem.find_by_name(os_name) || Operatingsystem.create!(:name => os_name)
+      os = Operatingsystem.find_or_initialize_by(:name => os_name)
     end
     if os.description.blank?
       if os_name == 'SLES'
-        os.description = os_name + ' ' + orel.gsub!('.', ' SP')
+        os.description = os_name + ' ' + orel.gsub('.', ' SP')
       elsif facts[:lsbdistdescription]
         family = os.deduce_family || 'Operatingsystem'
         os.description = family.constantize.shorten_description facts[:lsbdistdescription]
       end
     end
-    os.save!
-    os
+
+    if os.new_record?
+      os.save!
+      Operatingsystem.find_by_id(os.id) # complete reload to be an instance of the STI subclass
+    else
+      os.save!
+      os
+    end
   end
 
   def environment
@@ -119,10 +127,12 @@ class PuppetFactParser < FactParser
   end
 
   def get_facts_for_interface(interface)
-    iface_facts = @facts.select { |name, value| name =~ /.*_#{interface}\Z/ }
-    iface_facts = iface_facts.map { |name, value| [name.gsub("_#{interface}", ''), value] }
+    iface_facts = @facts.inject([]) do |facts, (name, value)|
+      facts << [name.chomp("_#{interface}"), value] if name.end_with?("_#{interface}")
+      facts
+    end
     iface_facts = HashWithIndifferentAccess[iface_facts]
-    logger.debug "Interface #{interface} facts: #{iface_facts.inspect}"
+    logger.debug { "Interface #{interface} facts: #{iface_facts.inspect}" }
     iface_facts
   end
 

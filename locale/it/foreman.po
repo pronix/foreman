@@ -9,7 +9,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: Foreman\n"
 "Report-Msgid-Bugs-To: \n"
-"PO-Revision-Date: 2016-05-17 09:29+0000\n"
+"PO-Revision-Date: 2016-08-24 10:09+0000\n"
 "Last-Translator: Lukáš Zapletal\n"
 "Language-Team: Italian (http://www.transifex.com/foreman/foreman/language/it/)"
 "\n"
@@ -79,6 +79,9 @@ msgstr[1] ""
 msgid "%s is an unknown attribute"
 msgstr "%s è un attributo sconosciuto"
 
+msgid "%s is not a valid DNS record type"
+msgstr ""
+
 msgid "%s is not in environment"
 msgstr "%s non è presente nell'ambiente"
 
@@ -117,6 +120,15 @@ msgid "%{config_type} rebuild failed for host: %{host_names}."
 msgid_plural "%{config_type} rebuild failed for hosts: %{host_names}."
 msgstr[0] ""
 msgstr[1] ""
+
+msgid "%{controller}: %{host}'s operating system %{os} has no OS family"
+msgstr ""
+
+msgid "%{controller}: %{host}'s operating system is missing"
+msgstr ""
+
+msgid "%{controller}: unable to find a host that matches the request from %{addr}"
+msgstr ""
 
 msgid "%{cores} Cores and %{memory} memory"
 msgstr "%{cores} Core e %{memory} di memoria"
@@ -170,6 +182,9 @@ msgid_plural "%{name} has %{num_tag} classes"
 msgstr[0] ""
 msgstr[1] ""
 
+msgid "%{os} medium was not set for host '%{host}'"
+msgstr ""
+
 msgid "%{record} is being used by a hidden %{what} resource"
 msgstr ""
 
@@ -184,6 +199,14 @@ msgstr "%{resource_name} non trovato usando id '%{id}'"
 
 msgid "%{task} task failed with the following error: %{e}"
 msgstr "Il compito %{task} è fallito con il seguente errore: %{e}"
+
+msgid "%{taxonomy_type} %{taxonomy_name} has %{count} host that will need to be reassociated after deletion. Delete %{taxonomy_name2}?"
+msgid_plural "%{taxonomy_type} %{taxonomy_name} has %{count} hosts that will need to be reassociated after deletion. Delete %{taxonomy_name2}?"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "%{type} %{conflicts} already exists"
+msgstr ""
 
 msgid "%{value} does not belong to %{os} operating system"
 msgstr "%{value} non appartiene al sistema operativo %{os}"
@@ -241,28 +264,28 @@ msgstr "<b class='select_count'>0</b> selezionato"
 
 msgid ""
 "<b style=\"color: #6bb5df;\">%{disabled_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Disabled</p>"
+"               <p>Disabled</p>"
 msgid_plural ""
 "<b style=\"color: #6bb5df;\">%{disabled_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Disabled</p>"
+"               <p>Disabled</p>"
 msgstr[0] ""
 msgstr[1] ""
 
 msgid ""
 "<b style=\"color: #6bb5df;\">%{hosts_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Changed</p>"
+"               <p>Changed</p>"
 msgid_plural ""
 "<b style=\"color: #6bb5df;\">%{hosts_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Changed</p>"
+"               <p>Changed</p>"
 msgstr[0] ""
 msgstr[1] ""
 
 msgid ""
 "<b style=\"color: #6bb5df;\">%{out_of_sync_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Out of sync</p>"
+"               <p>Out of sync</p>"
 msgid_plural ""
 "<b style=\"color: #6bb5df;\">%{out_of_sync_sum}</b>\n"
-"               <p style=\"font-weight: bold; margin: 5px; padding: 0px;\">Out of sync</p>"
+"               <p>Out of sync</p>"
 msgstr[0] ""
 msgstr[1] ""
 
@@ -376,6 +399,9 @@ msgstr "Aggiungi variabile"
 
 msgid "Add Volume"
 msgstr "Aggiungi volume"
+
+msgid "Add a CD-ROM drive to the virtual machine."
+msgstr ""
 
 msgid "Add a Puppet class to host"
 msgstr "Aggiungi una classe Puppet all'host"
@@ -521,11 +547,23 @@ msgstr ""
 msgid "Always show configuration status"
 msgstr ""
 
-msgid "An IP address will be auto-suggested if you have a DHCP-enabled Smart Proxy on the subnet selected above.<br/><br/>The IP address can be left blank when:<br/><ul><li>provisioning tokens are enabled</li><li>the domain does not manage DNS</li><li>the subnet does not manage reverse DNS</li><li>and the subnet does not manage DHCP reservations</li></ul>"
-msgstr "Un indirizzo IP verrà suggerito automaticamente se è presente un DHCP-enabled Smart Proxy sulla sottorete selezionata. <br/><br/>L'indirizzo IP può essere lasciato vuoto quando:<br/><ul><li>sono stati abilitati i token per il provisioning</li><li>il dominio non gestisce DNS</li><li>la sottorete non gestisce il DNS inverso</li><li>e la sottorete non gestisce le prenotazioni DHCP</li></ul>"
+msgid "An IP address will be auto-suggested if you have enabled IPAM on the IPv4 subnet selected above.<br/><br/>The IP address can be left blank when:<br/><ul><li>provisioning tokens are enabled</li><li>the domain does not manage DNS</li><li>the subnet does not manage reverse DNS</li><li>and the subnet does not manage DHCP reservations</li></ul>"
+msgstr ""
+
+msgid "An IP address will be auto-suggested if you have enabled IPAM on the IPv6 subnet selected above."
+msgstr ""
+
+msgid "An email address is required, please update your account details"
+msgstr ""
 
 msgid "An explicit layout for the partitions of your hard drive(s). E.G."
 msgstr "Disposizione esplicita per le partizioni del disco fisso. E.G."
+
+msgid "Annotation Notes"
+msgstr ""
+
+msgid "Annotation notes"
+msgstr ""
 
 msgid "Anonymous admin user %s is missing, run foreman-rake db:seed"
 msgstr "Utente admin anonimo %s mancante, eseguire foreman-rake db:seed"
@@ -584,6 +622,9 @@ msgid "Are you sure you want to delete host %s? This will delete the virtual mac
 msgstr ""
 
 msgid "Are you sure you want to delete this widget from your dashboard?"
+msgstr ""
+
+msgid "Are you sure you want to log out?"
 msgstr ""
 
 msgid "Are you sure you want to power %{act} %{vm}?"
@@ -964,6 +1005,9 @@ msgstr "Deselezionandolo sarà possibile specificare il filtro con la sintassi d
 msgid "CA certificate expiry date"
 msgstr ""
 
+msgid "CD-ROM drive"
+msgstr ""
+
 msgid "CDROM"
 msgstr "CDROM"
 
@@ -1006,10 +1050,10 @@ msgstr "Cancella la richiesta di creazione per questo host"
 msgid "Canceled pending build for %s"
 msgstr "Compilazione in attesa cancellata per %s"
 
-msgid "Cannot add pagelet to page %s without mountpoint"
+msgid "Cannot add pagelet with key %s and without mountpoint"
 msgstr ""
 
-msgid "Cannot add pagelet to page %s without partial"
+msgid "Cannot add pagelet with key %s and without partial"
 msgstr ""
 
 msgid "Cannot create LDAP configuration for %s without dedicated service account"
@@ -1026,6 +1070,9 @@ msgstr "Impossibile rimuovere il gruppo %{current} poichè presenta gruppi di ho
 
 msgid "Cannot find user %s when switching context"
 msgstr "Impossibile trovare l'utente %s se si seleziona un altro contesto"
+
+msgid "Cannot register compute resource, wrong type supplied"
+msgstr ""
 
 msgid "Canvas not supported."
 msgstr "Canvas non supportato."
@@ -1123,12 +1170,6 @@ msgstr "Selezionare il link di una risorsa di calcolo per modificarne l'attribut
 msgid "Click to add %s"
 msgstr "Seleziona per aggiungere %s"
 
-msgid "Click to edit"
-msgstr "Seleziona per la modifica"
-
-msgid "Click to edit.."
-msgstr "Seleziona per la modifica..."
-
 msgid "Click to log in again."
 msgstr "Seleziona per un altro accesso."
 
@@ -1160,6 +1201,9 @@ msgid "Clone a provision template"
 msgstr ""
 
 msgid "Clone a template"
+msgstr ""
+
+msgid "Clone this host"
 msgstr ""
 
 msgid "Close"
@@ -1339,17 +1383,14 @@ msgstr "Crea"
 msgid "Create %s"
 msgstr "Crea %s"
 
+msgid "Create %{type} for %{host}"
+msgstr ""
+
 msgid "Create :a_resource"
 msgstr "Crea :a_resource"
 
 msgid "Create DHCP Settings for %s"
 msgstr "Crea impostazioni DHCP per %s"
-
-msgid "Create DNS record for %s"
-msgstr "Crea un record DNS per %s"
-
-msgid "Create Reverse DNS record for %s"
-msgstr "Crea un record per il DNS inverso per %s"
 
 msgid "Create a Puppet class"
 msgstr "Crea classe puppet"
@@ -1404,6 +1445,9 @@ msgstr "Crea un parametro nidificato per un gruppo di host"
 
 msgid "Create a nested parameter for a location"
 msgstr "Crea un parametro nidificato per una posizione"
+
+msgid "Create a nested parameter for a subnet"
+msgstr ""
 
 msgid "Create a nested parameter for an operating system"
 msgstr "Crea un parametro nidificato per un sistema operativo"
@@ -1516,20 +1560,14 @@ msgstr "I record DHCP %s sono già esistenti"
 msgid "DNS"
 msgstr "DNS"
 
-msgid "DNS A Records %s already exists"
-msgstr "I record DNS A %s sono già esistenti"
-
-msgid "DNS PTR Records %s already exists"
-msgstr "I record DNS PTR %s sono già esistenti"
-
 msgid "DNS Proxy"
 msgstr "DNS Proxy"
 
 msgid "DNS Proxy to use within this subnet"
 msgstr "DNS Proxy da usare all'interno di questa sottorete"
 
-msgid "DNS Proxy to use within this subnet for managing PTR records, note that A records are managed via Domain DNS proxy"
-msgstr "DNS proxy da usare all'interno di questa sottorete per la gestione dei record PTR, da notare che i record A sono gestiti per mezzo di un Domain DNS proxy"
+msgid "DNS Proxy to use within this subnet for managing PTR records, note that A and AAAA records are managed via Domain DNS proxy"
+msgstr ""
 
 msgid "DNS conflict timeout"
 msgstr ""
@@ -1573,8 +1611,8 @@ msgstr "Hostname del server Puppet predefinito"
 msgid "Default behavior"
 msgstr "Comportamento predefinito"
 
-msgid "Default boot mode for interfaces assigned to this subnet"
-msgstr "Modalità d'avvio predefinita per le interfacce assegnate a questa sottorete"
+msgid "Default boot mode for interfaces assigned to this subnet, applied to hosts from provisioning templates"
+msgstr ""
 
 msgid "Default boot mode for interfaces assigned to this subnet, valid values are \"Static\", \"DHCP\""
 msgstr "Modalità d'avvio predefinita per le interfacce assegnate a questa sottorete, i valori validi sono \"Static\", \"DHCP\""
@@ -1681,6 +1719,9 @@ msgstr "Cancella un parametro nidificato per un gruppo di host"
 msgid "Delete a nested parameter for a location"
 msgstr "Cancella un parametro nidificato per una posizione"
 
+msgid "Delete a nested parameter for a subnet"
+msgstr ""
+
 msgid "Delete a nested parameter for an operating system"
 msgstr "Cancella un parametro nidificato per un sistema operativo"
 
@@ -1734,6 +1775,9 @@ msgstr "Cancella tutti i parametri nidificati per un host"
 
 msgid "Delete all nested parameters for a host group"
 msgstr "Cancella tutti i parametri nidificati per un gruppo di hpst"
+
+msgid "Delete all nested parameters for a subnet"
+msgstr ""
 
 msgid "Delete all nested parameters for an operating system"
 msgstr "Cancella tutti i parametri nidificati per un sistema operativo"
@@ -1945,6 +1989,9 @@ msgstr ""
 msgid "ERROR or FATAL"
 msgstr ""
 
+msgid "EUI-64"
+msgstr ""
+
 msgid "Each architecture can also be associated with more than one operating system and a selector block is provided to allow you to select valid combinations."
 msgstr "Ogni architettura può essere associata con più di un sistema operativo, viene altresì fornito un blocco di selezione per permettere all'utente di selezionare le combinazioni valide."
 
@@ -2047,19 +2094,13 @@ msgstr "Modifica gruppo utenti"
 msgid "Edit compute profile on %s"
 msgstr "Modifica profilo di calcolo su %s"
 
-msgid "Edit your host"
-msgstr "Modifica host"
-
-msgid "Either you didnt generate the puppetdocs (see <a rel=\"external\" href=\"%{url}\">here</a>) or the class <strong>%{name}</strong> could not be found in environment <strong>%{environment}</strong><br/> Please ensure that the class <strong>%{name}</strong>s declaration is accessible via the modulepath associated with <strong>%{environment}</strong>."
-msgstr "Molto probabilmente non è stato generato puppetdocs (consultare <a rel=\"external\" href=\"%{url}\">qui</a>), oppure la classe <strong>%{name}</strong> non è stata trovata all'interno dell'ambiente <strong>%{environment}</strong><br/>. Assicurarsi che la dichiarazione <strong>%{name}</strong>s della classe sia accessibile tramite il percorso associato con <strong>%{environment}</strong>."
+msgid "Edit this host"
+msgstr ""
 
 msgid "Email Preferences"
 msgstr ""
 
 msgid "Email address is missing"
-msgstr ""
-
-msgid "Email is Required"
 msgstr ""
 
 msgid "Email reply address"
@@ -2123,6 +2164,9 @@ msgstr ""
 msgid "Environment"
 msgstr "Ambiente"
 
+msgid "Environment Distribution"
+msgstr ""
+
 msgid "Environment ID"
 msgstr ""
 
@@ -2144,14 +2188,8 @@ msgstr "Variabile d'ambiente contentente lo stato di verifica di un certificato 
 msgid "Environments"
 msgstr "Ambienti"
 
-msgid "Environments Distribution"
-msgstr "Distribuzione ambienti"
-
 msgid "Environments and documentation"
 msgstr "Ambienti e documentazione"
-
-msgid "Environments may be manually created and only require the name of the environment to be declared."
-msgstr "È possibile creare manualmente gli ambienti e sarà necessario dichiararne solo il nome."
 
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Environment|Hostgroups count"
@@ -2190,6 +2228,9 @@ msgid "Error has occurred while communicating with %{cr}: %{e}"
 msgstr "Si è verificato un errore durante la comunicazione con %{cr}: %{e}"
 
 msgid "Error loading interfaces information: %s"
+msgstr ""
+
+msgid "Error loading scheduler hint filters information: %s"
 msgstr ""
 
 msgid "Error loading virtual machine information: %s"
@@ -2271,6 +2312,9 @@ msgstr "Nome evento"
 
 msgid "Fact Values"
 msgstr "Valori evento"
+
+msgid "Fact Values | %{host_name}"
+msgstr ""
 
 msgid "Fact distribution chart"
 msgstr ""
@@ -2365,14 +2409,17 @@ msgstr "Impossibile eliminare una istanza %{compute_resource} di calcolo %{name}
 msgid "Failed to enable %{host} for installation: %{errors}"
 msgstr "Impossibile abilitare %{host} all'installazione: %{errors}"
 
+msgid "Failed to fetch a free IP from proxy %{proxy}: %{message}"
+msgstr ""
+
 msgid "Failed to fetch boot files"
 msgstr "Impossibile recuperare i file per l'avvio"
 
 msgid "Failed to fetch: "
 msgstr "Recupero fallito:"
 
-msgid "Failed to generate %{template_kind} template: %{e}"
-msgstr "Impossibile generare il modello %{template_kind}: %{e}"
+msgid "Failed to generate %{template_kind} template %{template_name}: %{e}"
+msgstr ""
 
 msgid "Failed to get IP for %{name}: %{e}"
 msgstr "Impossibile ottenere l'IP per %{name}: %{e}"
@@ -2518,6 +2565,9 @@ msgstr "Illimitato"
 msgid "Fingerprint"
 msgstr "Firma digitale"
 
+msgid "Finish template"
+msgstr ""
+
 msgid "Fix %s on Mismatch"
 msgstr "Correggi %s previa corrispondenza errata"
 
@@ -2549,9 +2599,6 @@ msgid ""
 "For example, if you have copied several Red Hat release disks into a directory structure where the disk images are named 5.8 or 6.2, and each contained both x86_64 and i386 binaries, then you\n"
 "  could create a single medium entry describing them all.\n"
 "  The entry, which could be just named 'Red Hat' could contain a path like this <em>'http://server/redhat/$version/$arch'</em>"
-msgstr ""
-
-msgid "For example, there might be a data center in London and one in Virginia; these are locations."
 msgstr ""
 
 msgid "For more information"
@@ -2602,8 +2649,11 @@ msgstr "L'orario di creazione del riporto di Foreman è <em>%s</em>"
 msgid "Foreman smart variables will be exposed via the ENC yaml output"
 msgstr "Le variabili smart di Foreman verranno esposte tramite l'output yalm ENC"
 
-msgid "Foreman subnet ID of interface"
-msgstr "ID sottorete di Foreman dell'interfaccia"
+msgid "Foreman subnet ID of IPv4 interface"
+msgstr ""
+
+msgid "Foreman subnet ID of IPv6 interface"
+msgstr ""
 
 msgid "Foreman supports automatically creating realm entries for new hosts."
 msgstr ""
@@ -2707,6 +2757,9 @@ msgstr "Generale"
 msgid "General useful description, for example this kind of hardware needs a special BIOS setup"
 msgstr "Descrizione utile generale, ad esempio questo tipo di hardware ha bisogno di una impostazione particolare del BIOS"
 
+msgid "Generate new random name. Visit Settings to disable this feature."
+msgstr ""
+
 msgid "Generated %s ago"
 msgstr "Generato %s fa"
 
@@ -2739,6 +2792,9 @@ msgstr "Parametri globali"
 
 msgid "Global parameters"
 msgstr "Parametri globali"
+
+msgid "Global status changed from %{from} to %{to}"
+msgstr ""
 
 msgid "Good host reports in the last %s"
 msgstr "Riporti host corretti negli ultimi %s"
@@ -2783,6 +2839,9 @@ msgid "Hide all values for this parameter."
 msgstr ""
 
 msgid "Hide this value"
+msgstr ""
+
+msgid "Hint data is missing"
 msgstr ""
 
 msgid "History"
@@ -3039,6 +3098,9 @@ msgstr ""
 msgid "Hosts that had pending changes"
 msgstr "Host con modifiche in sospeso"
 
+msgid "Hosts that had pending changes with alerts enabled"
+msgstr ""
+
 msgid "Hosts that had performed modifications without error"
 msgstr "Host che hanno eseguito delle modifiche senza alcun errore"
 
@@ -3051,11 +3113,29 @@ msgstr ""
 msgid "Hosts which are currently not running Puppet"
 msgstr ""
 
+msgid "Hosts which are not reporting"
+msgstr ""
+
 msgid "Hosts which didn't run puppet in the last %s"
 msgstr "Host che non hanno eseguito puppet negli ultimi %s"
 
+msgid "Hosts which recently applied changes"
+msgstr ""
+
+msgid "Hosts which recently applied changes successfully"
+msgstr ""
+
+msgid "Hosts which recently applied changes successfully with alerts enabled"
+msgstr ""
+
 msgid "Hosts with alerts disabled"
 msgstr "Host con avvisi disabilitati"
+
+msgid "Hosts with error state"
+msgstr ""
+
+msgid "Hosts with error state and alerts enabled"
+msgstr ""
 
 msgid "Hosts with errors"
 msgstr "Host con errori"
@@ -3068,6 +3148,21 @@ msgstr "Host senza alcun riporto"
 
 msgid "Hosts with notifications disabled"
 msgstr "Host con notifiche disabilitate"
+
+msgid "Hosts without changes or errors"
+msgstr ""
+
+msgid "Hosts without changes or errors, with alerts enabled"
+msgstr ""
+
+msgid "Hosts without errors"
+msgstr ""
+
+msgid "Hosts without errors percent"
+msgstr ""
+
+msgid "Hosts without errors, with alerts enabled"
+msgstr ""
 
 msgid "How values are validated"
 msgstr "Come convelidare i valori"
@@ -3186,20 +3281,57 @@ msgstr "Gestione indirizzi IP"
 msgid "IP Address auto suggestion mode for this subnet, valid values are \"DHCP\", \"Internal DB\", \"None\""
 msgstr "Modalità per il suggerimento automatico dell'indirizzo IP per questa sottorete, i valori validi sono \"DHCP\", \"Internal DB\", \"None\""
 
-msgid "IP address"
-msgstr "indirizzo IP"
-
 msgid "IP address auto-suggest"
 msgstr "suggerisci automaticamente l'indirizzo IP"
 
-msgid "IP address of interface"
-msgstr "Indirizzo IP dell'interfaccia"
+msgid "IP addresses that should be excluded from suggestion"
+msgstr ""
 
 msgid "IP:"
 msgstr ""
 
 msgid "IPAM"
 msgstr "IPAM"
+
+msgid "IPv4"
+msgstr ""
+
+msgid "IPv4 Address"
+msgstr ""
+
+msgid "IPv4 DNS record"
+msgid_plural "IPv4 DNS records"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "IPv4 Subnet"
+msgstr ""
+
+msgid "IPv4 address"
+msgstr ""
+
+msgid "IPv4 address of interface"
+msgstr ""
+
+msgid "IPv6"
+msgstr ""
+
+msgid "IPv6 Address"
+msgstr ""
+
+msgid "IPv6 DNS record"
+msgid_plural "IPv6 DNS records"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "IPv6 Subnet"
+msgstr ""
+
+msgid "IPv6 address"
+msgstr ""
+
+msgid "IPv6 address of interface"
+msgstr ""
 
 msgid "IRC"
 msgstr "IRC"
@@ -3231,8 +3363,8 @@ msgstr "Se selezionato, verrà generato un errore se nessun valore predefinito �
 msgid "If true, will raise an error if there is no default value and no matcher provide a value"
 msgstr ""
 
-msgid "If you are planning to use Foreman as an external node classifier you should provide information about one or more environments."
-msgstr "Se desideri usare Foreman come classificatore del nodo esterno, fornire le informazioni su uno o più ambienti."
+msgid "If you are planning to use Foreman as an external node classifier you should provide information about one or more environments. This information is commonly imported from a pre-existing Puppet configuration by the use of the %{link_start}Puppet classes and environment importer%{link_end}."
+msgstr ""
 
 msgid "If you feel this is an error with Foreman itself, please open a new issue with"
 msgstr "Se credi che questo sia un errore di Foreman, apri un nuovo caso con"
@@ -3298,6 +3430,9 @@ msgstr "Uuid"
 msgid "Import"
 msgstr "Importa"
 
+msgid "Import IPv4 subnets"
+msgstr ""
+
 msgid "Import from %s"
 msgstr "Importa da %s"
 
@@ -3310,11 +3445,8 @@ msgstr "Importa le classi del puppet dal puppet proxy per un ambiente"
 msgid "Import puppet classes from puppet proxy."
 msgstr "Importa le classi del puppet dal puppet proxy."
 
-msgid "Import subnets"
-msgstr "Importa sottoreti"
-
-msgid "Imported Subnets"
-msgstr "Sottoreti importate"
+msgid "Imported IPv4 Subnets"
+msgstr ""
 
 msgid "In addition to defining which puppet classes get included when building this host type you are also able to assign variables and provisioning information to a host group to further refine the behavior of the puppet runtime."
 msgstr "Oltre a poter definire le classi del puppet incluse durante la creazione di questo tipo di host, sarà possibile anche assegnare le variabili e le informazioni sul provisioning ad un gruppo di host, così facendo si avrà un comportamento più mirato durante il runtime del puppet."
@@ -3397,6 +3529,9 @@ msgstr "Selezione %s non valida, è necessario selezionare una di quelle in poss
 msgid "Invalid Host"
 msgstr "Host non valido"
 
+msgid "Invalid architecture '%{arch}' for '%{os}'"
+msgstr ""
+
 msgid "Invalid architecture for %s"
 msgstr ""
 
@@ -3405,6 +3540,9 @@ msgstr "Token di autenticità non valido"
 
 msgid "Invalid log level: %s"
 msgstr "Livello registrazione non valido: %s"
+
+msgid "Invalid medium '%{medium}' for '%{os}'"
+msgstr ""
 
 msgid "Invalid medium for %s"
 msgstr ""
@@ -3444,6 +3582,12 @@ msgstr ""
 
 msgid "Item"
 msgstr "Elemento"
+
+msgid "JSON VM listing is not supported for this compute resource."
+msgstr ""
+
+msgid "JSON object of the scheduler hint"
+msgstr ""
 
 msgid "Keep selected hosts for a future action"
 msgstr ""
@@ -3661,6 +3805,9 @@ msgstr "Elenca tutti i parametri per un gruppo di host"
 
 msgid "List all parameters for a location"
 msgstr "Elenca tutti i parametri per una posizione"
+
+msgid "List all parameters for a subnet"
+msgstr ""
 
 msgid "List all parameters for an operating system"
 msgstr "Elenca tutti i parametri per un sistema operativo"
@@ -3956,6 +4103,9 @@ msgstr ""
 msgid "Location parameters"
 msgstr ""
 
+msgid "Location with id %{id} not found"
+msgstr ""
+
 msgid "Location you had selected as your context has been deleted."
 msgstr "La posizione selezionata come contesto è stata rimossa."
 
@@ -3968,8 +4118,8 @@ msgstr "Posizioni"
 msgid "Locations also work nicely when used in tandem with %{organizations}."
 msgstr ""
 
-msgid "Locations are used to manage and differentiate the physical place where a system managed via Foreman is housed."
-msgstr "Le posizioni sono usate per gestire e differenziare la posizione fisica di un sistema gestito da Foreman."
+msgid "Locations are used to manage and differentiate the physical place where a system managed via Foreman is housed. For example, there might be a data center in London and one in Virginia; these are locations."
+msgstr ""
 
 msgid "Lock"
 msgstr "Blocca"
@@ -4027,6 +4177,12 @@ msgid "MAC address"
 msgstr "Indirizzo MAC"
 
 msgid "MAC address of interface. Required for managed interfaces on bare metal."
+msgstr ""
+
+msgid "MAC address to reuse the IP for this host"
+msgstr ""
+
+msgid "MAC-based"
 msgstr ""
 
 msgid "Machine Type"
@@ -4088,6 +4244,9 @@ msgstr ""
 
 msgid "Media IDs"
 msgstr "ID dispositivo"
+
+msgid "Media access control address for this interface. Format must be six groups of two hexadecimal digits separated by colons (:), e.g. 00:11:22:33:44:55"
+msgstr ""
 
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Medium"
@@ -4270,10 +4429,16 @@ msgstr "Rete"
 msgid "Network Based"
 msgstr "Basato sulla rete"
 
+msgid "Network can't be blank"
+msgstr ""
+
 msgid "Network interfaces"
 msgstr "Interfaccia di rete"
 
 msgid "Network interfaces management has been moved to the Interfaces tab. Please set your interfaces there."
+msgstr ""
+
+msgid "Network prefix"
 msgstr ""
 
 msgid "Network type"
@@ -4496,6 +4661,9 @@ msgstr "Nic::Base|Virtuale"
 msgid "No %{template_kind} templates were found for this host, make sure you define at least one in your %{os} settings"
 msgstr "Impossibile trovare i modelli %{template_kind} per questo host, definirne almeno uno nelle impostazioni %{os}"
 
+msgid "No IPv4 subnets selected"
+msgstr ""
+
 msgid "No TFTP feature"
 msgstr ""
 
@@ -4577,14 +4745,17 @@ msgstr "Nessun riporto di rilievo ricevuto durante la scorsa settimana"
 msgid "No logs to show"
 msgstr "Nessun log da mostrare"
 
+msgid "No matching server groups found"
+msgstr ""
+
 msgid "No networks"
 msgstr "Nessuna rete"
 
 msgid "No networks found."
 msgstr ""
 
-msgid "No new subnets found"
-msgstr "Nessuna rete secondaria trovata"
+msgid "No new IPv4 subnets found"
+msgstr ""
 
 msgid "No or invalid power state selected!"
 msgstr ""
@@ -4634,13 +4805,10 @@ msgstr "Nessun smart proxy disponibile dal quale importare gli ambienti, registr
 msgid "No subnets"
 msgstr "Nessuna rete secondaria"
 
-msgid "No subnets selected"
-msgstr "Nessuna sottorete secondaria selezionata"
-
-msgid "No template found"
-msgstr "Nessun modello trovato"
-
 msgid "No template with kind %{kind} for %{host}"
+msgstr ""
+
+msgid "No templates found"
 msgstr ""
 
 msgid "No templates found for this host."
@@ -4754,9 +4922,6 @@ msgstr ""
 msgid "OK"
 msgstr "OK"
 
-msgid "OS Distribution"
-msgstr "Distribuzione OS"
-
 msgid "OS Image"
 msgstr "ImmagineOS"
 
@@ -4802,9 +4967,6 @@ msgstr "È permessa solo una dichiarazione per proxy"
 msgid "Only one volume can be bootable"
 msgstr "È possibile avviare un solo volume"
 
-msgid "Oops"
-msgstr "Attenzione"
-
 msgid "Oops!!"
 msgstr "Ops!!"
 
@@ -4846,6 +5008,9 @@ msgstr ""
 
 msgid "Operating systems"
 msgstr "Sistemi operativi"
+
+msgid "Operating systems API supported?"
+msgstr ""
 
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Operatingsystem"
@@ -4942,6 +5107,9 @@ msgstr ""
 msgid "Organization parameters"
 msgstr ""
 
+msgid "Organization with id %{id} not found"
+msgstr ""
+
 msgid "Organization you had selected as your context has been deleted."
 msgstr "L'organizzazione selezionata come contesto è stata rimossa."
 
@@ -4950,9 +5118,6 @@ msgstr "Organizzazioni"
 
 msgid "Organizations also work nicely in tandem with %{locations}."
 msgstr ""
-
-msgid "Organizations are particularly useful for Foreman installations where several customers or business units are managed with a single Foreman install."
-msgstr "Le organizzazioni sono particolarmente importanti per le installazioni Foreman, quando numerose utenze vengono gestite con una singola installazione Foreman."
 
 msgid "Original value info"
 msgstr ""
@@ -4965,6 +5130,9 @@ msgstr "Non sincronizzato"
 
 msgid "Out of sync hosts"
 msgstr "Host non sincronizzati"
+
+msgid "Out of sync hosts with alerts enabled"
+msgstr ""
 
 msgid "Out of sync interval"
 msgstr ""
@@ -4981,7 +5149,7 @@ msgstr ""
 msgid "Override this value"
 msgstr "Sovrascrivi questo valore"
 
-msgid "Override value"
+msgid "Override value, required if use_puppet_default is false"
 msgstr ""
 
 msgid "Overview"
@@ -5002,11 +5170,20 @@ msgstr "Proprietario cambiato a %s"
 msgid "Owner type needs to be one of the following: %s"
 msgstr "Il tipo di proprietario deve essere uno dei seguenti: %s"
 
+msgid "POAP template"
+msgstr ""
+
 msgid "PXE"
 msgstr "PXE"
 
 msgid "PXE Default file has been deployed to all Smart Proxies"
 msgstr "Il file predefinito PXE deve essere implementato su tutti gli Smart Proxy"
+
+msgid "PXEGrub template"
+msgstr ""
+
+msgid "PXELinux template"
+msgstr ""
 
 msgid "Param name"
 msgstr "Nome param"
@@ -5236,6 +5413,12 @@ msgstr "Power%s"
 msgid "Preallocate disk"
 msgstr "Preallocare il disco"
 
+msgid "Prefix length can't be blank"
+msgstr ""
+
+msgid "Prefix length must be /64 or less to use EUI-64"
+msgstr ""
+
 msgid "Prefix to add to all outgoing email"
 msgstr "Prefisso da aggiungere a tutte le email in uscita"
 
@@ -5272,11 +5455,20 @@ msgstr "Procedere su Modifica"
 msgid "Properties"
 msgstr "Proprietà"
 
+msgid "Property"
+msgstr "Proprietà"
+
+msgid "Protocol"
+msgstr ""
+
 msgid "Provider"
 msgstr "Provider"
 
 msgid "Providers include %{providers}"
 msgstr "I provider includono %{providers}"
+
+msgid "Provides an unused IP address in this subnet"
+msgstr ""
 
 msgid "Provision"
 msgstr "Provisioning"
@@ -5298,9 +5490,6 @@ msgstr "Contenuto del modello di provisioni modificato %s"
 
 msgid "Provisioning Templates"
 msgstr "Modelli per il provisioning"
-
-msgid "Provisioning support is disabled or this host is not managed"
-msgstr ""
 
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Provisioning template"
@@ -5411,9 +5600,6 @@ msgstr ""
 
 msgid "Puppet classes"
 msgstr "Classi del puppet"
-
-msgid "Puppet classes and environment importer"
-msgstr "Importer per l'ambiente e le classi del puppet"
 
 msgid "Puppet environments"
 msgstr "Ambienti del puppet"
@@ -5530,6 +5716,15 @@ msgstr "SOSTITUIRE le posizioni con gli id dati"
 msgid "REPLACE organizations with given ids."
 msgstr "SOSTITUIRE le organizzazioni con gli id dati"
 
+msgid "Random gives unique names, MAC-based are longer but stable (and only works with bare-metal)"
+msgstr ""
+
+msgid "Random-based"
+msgstr ""
+
+msgid "Randomize"
+msgstr ""
+
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Realm"
 msgstr "Area di autenticazione"
@@ -5613,17 +5808,14 @@ msgstr ""
 msgid "Remove %s?"
 msgstr "Rimuovere %s?"
 
+msgid "Remove %{type} for %{host}"
+msgstr ""
+
 msgid "Remove DHCP Settings for %s"
 msgstr "Rimuovere le impostazioni DHCP per %s"
 
-msgid "Remove DNS record for %s"
-msgstr "Rimuovere il record DNS per %s"
-
 msgid "Remove Parameter"
 msgstr "Rimuovi il parametro"
-
-msgid "Remove Reverse DNS record for %s"
-msgstr "Rimuovere il record DNS inverso per %s"
 
 msgid "Remove a Puppet class from host"
 msgstr "Rimuovi una classe Puppet dall'host"
@@ -5631,11 +5823,8 @@ msgstr "Rimuovi una classe Puppet dall'host"
 msgid "Remove a Puppet class from host group"
 msgstr "Rimuovi una classe Puppet dal gruppo di host"
 
-msgid "Remove conflicting DNS record for %s"
-msgstr "Rimuovere il record DNS in conflitto per %s"
-
-msgid "Remove conflicting Reverse DNS record for %s"
-msgstr "Rimuovere il record DNS inverso in conflitto per %s"
+msgid "Remove conflicting %{type} for %{host}"
+msgstr ""
 
 msgid "Remove duplicate values (only array type)"
 msgstr ""
@@ -5752,6 +5941,16 @@ msgstr ""
 
 msgid "Reverse DNS Proxy"
 msgstr ""
+
+msgid "Reverse IPv4 DNS record"
+msgid_plural "Reverse IPv4 DNS records"
+msgstr[0] ""
+msgstr[1] ""
+
+msgid "Reverse IPv6 DNS record"
+msgid_plural "Reverse IPv6 DNS records"
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "Revert"
 msgstr "Ripristina"
@@ -5873,11 +6072,17 @@ msgstr "Salva dashboard"
 msgid "Save something and try again"
 msgstr "Salva qualcosa e riprova"
 
+msgid "Scheduler hint filter"
+msgstr ""
+
 msgid "Scope by locations"
 msgstr "Scopo per posizioni"
 
 msgid "Scope by organizations"
 msgstr "Scopo per organizzazioni"
+
+msgid "Script template"
+msgstr ""
 
 msgid "Search"
 msgstr "Cerca"
@@ -6005,8 +6210,17 @@ msgstr ""
 msgid "Send welcome email"
 msgstr ""
 
+msgid "Server group"
+msgstr ""
+
+msgid "Server hint data"
+msgstr ""
+
 msgid "Server type"
 msgstr "Tipo di server"
+
+msgid "Service unavailable"
+msgstr ""
 
 msgid "Services"
 msgstr "Servizi"
@@ -6069,8 +6283,8 @@ msgstr ""
 msgid "Should this interface be used for constructing the FQDN of the host? Each managed hosts needs to have one primary interface."
 msgstr ""
 
-msgid "Show %{host} facts"
-msgstr "Mostra %{host} eventi"
+msgid "Show %s fact values for all hosts"
+msgstr ""
 
 msgid "Show :a_resource"
 msgstr "Mostra :a_resource"
@@ -6144,6 +6358,9 @@ msgstr "Mostra un parametro nidificato per un gruppo di host"
 msgid "Show a nested parameter for a location"
 msgstr "Mostra un parametro nidificato per una posizione"
 
+msgid "Show a nested parameter for a subnet"
+msgstr ""
+
 msgid "Show a nested parameter for an operating system"
 msgstr "Mostra un parametro nidificato per un sistema operativo"
 
@@ -6189,11 +6406,8 @@ msgstr "Mostra un gruppo di utenti"
 msgid "Show all %s children fact values"
 msgstr "Mostra tutti i valori degli eventi figlio %s"
 
-msgid "Show all %s fact values"
-msgstr "Mostra tutti i valori degli eventi %s"
-
-msgid "Show all %{name} facts where they are equal to %{value}"
-msgstr "Mostra tutti gli eventi %{name} con un valore uguale a %{value}"
+msgid "Show all %s facts with the same value"
+msgstr ""
 
 msgid "Show an LDAP authentication source"
 msgstr "Mostra un sorgente di autenticazione LDAP"
@@ -6318,6 +6532,9 @@ msgstr "Url"
 
 msgid "Snippet"
 msgstr "Snippet"
+
+msgid "Some imported user account details cannot be saved: %s"
+msgstr ""
 
 msgid "Some interfaces are invalid"
 msgstr ""
@@ -6479,6 +6696,12 @@ msgstr "Vlanid"
 msgid "Subscribe"
 msgstr "Sottoscrivi"
 
+msgid "Subscribe to all hosts"
+msgstr ""
+
+msgid "Subscribe to my hosts"
+msgstr ""
+
 msgid "Success"
 msgstr "Successo"
 
@@ -6511,6 +6734,9 @@ msgstr "%s aggiornato con successo."
 
 msgid "Successfully updated environments and Puppet classes from the on-disk Puppet installation"
 msgstr "Classi del puppet e ambienti aggiornati con successo dal dischetto d'installazione del puppet"
+
+msgid "Suffix or prefix length for this subnet, e.g. 32"
+msgstr ""
 
 msgid "Suggest new"
 msgstr "Suggerisci nuovo"
@@ -6587,6 +6813,9 @@ msgstr "Modello"
 
 msgid "Template %s is empty."
 msgstr "Il template %s è vuoto."
+
+msgid "Template '%s' is either missing or has an invalid organization or location"
+msgstr ""
 
 msgid "Template Diff"
 msgstr "Diff del modello"
@@ -6709,6 +6938,9 @@ msgstr "Il percorso del file dove viene posizionato il file p12"
 msgid "The final entry, Operating System default, can be set by editing the %s page."
 msgstr "La voce finale, impostazione predefinita del sistema operativo, può essere impostata modificando la pagina %s."
 
+msgid "The following IPv4 subnets have been found. Please review the details before creating them."
+msgstr ""
+
 msgid "The following entries were found conflicting with what foreman wanted to apply."
 msgstr "Le seguenti voci sono in conflitto con il contenuto che Foreman desidera applicare."
 
@@ -6733,9 +6965,6 @@ msgstr "I seguenti host sono stati aggiornati"
 msgid "The following parameters were skipped as they did not exists on this host:"
 msgstr "I seguenti parametri sono stati saltati poichè non erano presenti su questo host:"
 
-msgid "The following subnets have been found"
-msgstr "Sono state trovate le seguenti sottoreti"
-
 msgid "The full DNS domain name"
 msgstr "Il nome del dominio DNS completo"
 
@@ -6749,6 +6978,11 @@ msgstr ""
 
 msgid "The keywords <b>$version</b>, <b>$major</b> and <b>$minor</b> will be interpolated back into the path specification to calculate the true URL address."
 msgstr "<b>$version</b>, <b>$major</b> e <b>$minor</b> verranno usate nelle specifiche del percorso per calcolare il vero indirizzo URL."
+
+msgid "The list is excluding %{count} %{link_start}physical host%{link_end}."
+msgid_plural "The list is excluding %{count} %{link_start}physical hosts%{link_end}."
+msgstr[0] ""
+msgstr[1] ""
 
 msgid "The marked fields will need reviewing"
 msgstr "Ricontrollare i campi contrassegnati"
@@ -6797,6 +7031,9 @@ msgstr "L'utente usato per una operazione ssh in una istanza, normalmente cloud-
 msgid "The virtual machine is being deleted."
 msgstr "La macchina virtuale è stata rimossa."
 
+msgid "There are migrations pending in the system."
+msgstr ""
+
 msgid "There are no puppet environments set up on this puppet master. Please check the puppet master configuration."
 msgstr ""
 
@@ -6832,6 +7069,9 @@ msgstr "Si è verificato un errore nella riproduzione del modello %s:"
 msgid "There was an error rendering the %{name} template: %{error}"
 msgstr ""
 
+msgid "There was no active bridge interface found in libvirt, if it does not support listing, you can enter the bridge name manually (e.g. br0)"
+msgstr ""
+
 msgid "These two options are personal decisions and are up to you (where the main difference would be the parameter/variables settings)."
 msgstr "Queste due opzioni sono impostazioni personalizzate dell'utente (la differenza principale sono le impostazioni parametro/variabili)."
 
@@ -6849,9 +7089,6 @@ msgstr "In questo gruppo sono presenti gruppi nidificati!"
 
 msgid "This host's stored facts and reports will be deleted too."
 msgstr "Verranno cancellati anche le notifiche e gli eventi archiviati di questo host."
-
-msgid "This information is commonly imported from a pre-existing puppet configuration by the use of the"
-msgstr "Queste informazioni vengono generalmente importate da una configurazione preesistente del puppet tramite l'uso"
 
 msgid "This is a test message to confirm that Foreman's email configuration is working."
 msgstr ""
@@ -6887,6 +7124,9 @@ msgid "This template is locked. Please clone it to a new template to customize."
 msgstr "Questo template è bloccato. Eseguire la sua clonazione in un nuovo template per personalizzarlo."
 
 msgid "This template is locked. You may only change the                     associations. Please %s it to customize."
+msgstr ""
+
+msgid "This value is not hidden"
 msgstr ""
 
 msgid "This value is used also as the host's primary interface name."
@@ -6935,6 +7175,9 @@ msgstr "Token"
 msgid "Token duration"
 msgstr ""
 
+msgid "Token expired"
+msgstr ""
+
 #. TRANSLATORS: "Table name" or "Table name|Column name" for error messages
 msgid "Token|Expires"
 msgstr "Scadenza"
@@ -6951,6 +7194,9 @@ msgstr "Totale"
 
 msgid "Total Hosts: %s"
 msgstr "Host totali: %s"
+
+msgid "Total hosts count"
+msgstr ""
 
 msgid "Total of one host"
 msgid_plural "Total of %{hosts} hosts"
@@ -7012,8 +7258,14 @@ msgstr "Prova ad andare su %{href}"
 msgid "Type"
 msgstr "Tipo"
 
+msgid "Type of name generator"
+msgstr ""
+
 msgid "Type of realm, e.g. FreeIPA"
 msgstr "Tipo di Realm, es FreeIPA "
+
+msgid "Type or protocol, IPv4 or IPv6, defaults to IPv4"
+msgstr ""
 
 msgid "Types of validation values"
 msgstr ""
@@ -7069,11 +7321,8 @@ msgstr "Impossibile creare il menu per l'avvio TFTP predefinito"
 msgid "Unable to create realm entry"
 msgstr "Impossibile creare una voce per l'area di autenticazione"
 
-msgid "Unable to create the anonymous role."
-msgstr "Impossibile creare il ruolo anonimo."
-
-msgid "Unable to create the default user role."
-msgstr "Impossibile creare il ruolo utente predefinito."
+msgid "Unable to create the default role."
+msgstr ""
 
 msgid "Unable to delete DHCP entry for %s"
 msgstr "Impossibile rimuovere la voce DHCP per %s"
@@ -7122,9 +7371,6 @@ msgstr "Impossibile trovare un metodo di autenticazione corretto"
 
 msgid "Unable to find template %s"
 msgstr "Impossibile trovare il modello %s"
-
-msgid "Unable to find templates as this host has no operating system"
-msgstr "Impossibile trovare i modelli poichè questo host non ha alcun sistema operativo"
 
 msgid "Unable to generate output, Check log files"
 msgstr ""
@@ -7222,6 +7468,9 @@ msgstr ""
 msgid "Unknown"
 msgstr "Sconosciuto"
 
+msgid "Unknown IPAM type - can't continue"
+msgstr ""
+
 msgid "Unknown Power State"
 msgstr "Stato alimentazione sconosciuto"
 
@@ -7248,6 +7497,9 @@ msgstr "Sblocca"
 
 msgid "Unmanage host"
 msgstr "Rimuovi gestione dell'host"
+
+msgid "Unsupported IPAM mode for %s"
+msgstr ""
 
 msgid "Unsupported password hash function '%s'"
 msgstr "Funzione di cifratura della password non supportata '%s'"
@@ -7320,6 +7572,9 @@ msgstr "Aggiorna un parametro nidificato per un gruppo di host"
 
 msgid "Update a nested parameter for a location"
 msgstr "Aggiorna un parametro nidificato per una posizione"
+
+msgid "Update a nested parameter for a subnet"
+msgstr ""
 
 msgid "Update a nested parameter for an operating system"
 msgstr "Aggiorna un parametro nidificato per un sistema operativo"
@@ -7457,6 +7712,9 @@ msgstr "Gruppi di utenti"
 msgid "User IDs"
 msgstr "ID Utenti"
 
+msgid "User data template"
+msgstr ""
+
 msgid "User group"
 msgstr "Gruppo di utenti"
 
@@ -7560,8 +7818,8 @@ msgstr "Valore sale della Password"
 msgid "Uses thin provisioning if unchecked"
 msgstr "Usa thin provisioning se non selezionato"
 
-msgid "Using the organization system provides a way to group resources together for easy management."
-msgstr "L'uso del sistema dell'organizzazione permette di poter raggruppare le risorse e semplificarne la gestione."
+msgid "Using the organization system provides a way to group resources together for easy management. Organizations are particularly useful for Foreman installations where several customers or business units are managed with a single Foreman install."
+msgstr ""
 
 msgid "VCPU(s)"
 msgstr "VCPU"
@@ -7688,8 +7946,8 @@ msgstr "Versione"
 msgid "Version %{version}"
 msgstr "Versione %{version}"
 
-msgid "Version %{version}  © 2009-%{year} Paul Kelly and %{author}"
-msgstr "Versione %{version}  © 2009-%{year} Paul Kelly e %{author}"
+msgid "Version %{version}  %{copyright} 2009-%{year} Paul Kelly and %{author}"
+msgstr ""
 
 msgid "Very Strong"
 msgstr "Molto forte"
@@ -7772,13 +8030,13 @@ msgstr "Benvenuto su Foreman"
 msgid "What ever text(or ERB template) you use in here, would be used as your OS disk layout options If you want to use the partition table option, delete all of the text from this field"
 msgstr "Qualsiasi testo (o modello ERB) qui utilizzato, verrà implementato come opzione della disposizione del disco per l'OS. Se desideri utilizzare l'opzione per la tabella delle partizioni, cancellare tutto il testo da questo campo"
 
-msgid "When a Host requests a template (e.g. during provisioning), Foremanwill select the best match from the available templates of that type, in thefollowing order:"
+msgid "When a Host requests a template (e.g. during provisioning), Foreman will select the best match from the available templates of that type, in the following order:"
 msgstr ""
 
 msgid "When a realm is selected for a host, Foreman contacts the relevant realm smart proxy to create an entry for the host and retrieve it's one-time registration password."
 msgstr ""
 
-msgid "When editing a template, you must assign a listof operating systems which this template can be used with. Optionally, you canrestrict a template to a list of host groups and/or environments."
+msgid "When editing a template, you must assign a list of operating systems which this template can be used with. Optionally, you can restrict a template to a list of host groups and/or environments."
 msgstr ""
 
 msgid "When enabled the parameter is hidden in the UI"
@@ -7817,6 +8075,9 @@ msgstr "X509 Certification Authorities"
 msgid "YAML"
 msgstr "YAML"
 
+msgid "Yes"
+msgstr ""
+
 msgid "You are about to change the default PXE menu on all configured TFTP servers - continue?"
 msgstr ""
 
@@ -7847,8 +8108,8 @@ msgstr "Stai utilizzando un browser non supportato."
 msgid "You can find The Foreman on the %{freenode} (irc.freenode.net) network.  For general support, please visit #theforeman and for development specific related chat, please visit #theforeman-dev."
 msgstr "Foreman è disponibile sulla rete %{freenode} (irc.freenode.net). Per un supporto generico visitare #theforeman, e per argomenti specifici allo sviluppo visitare #theforeman-dev."
 
-msgid "You can select one of three possible IPAM modes:<br/><ul><li><strong>DHCP</strong> - will manage the IP on DHCP through assigned DHCP proxy, auto-suggested IPs come from DHCP</li><li><strong>Internal DB</strong> - use internal DB to auto-suggest free IP based on other interfaces on same subnet respecting range if specified, useful mainly with static boot mode</li><li><strong>None</strong> - leave IP management solely on user, no auto-suggestion</li></ul>"
-msgstr "È possibile selezionare una delle tre modalità IPAM disponibili:<br/><ul><li><strong>DHCP</strong> - gestirà l'IP su DHCP attraverso un DHCP proxy assegnato, gli IP suggeriti automaticamente provengono da DHCP</li><li><strong>DB interno</strong> - usare DB interno per suggerire automaticamente un IP disponibile in base al rispetto della gamma, se specificata, di altre interfacce presenti sulla stessa sottorete, utile principalmente con una modalità d'avvio statica</li><li><strong>None</strong> - lascia la gestione dell'IP all'utente, senza suggerimento automatico</li></ul>"
+msgid "You can select one of the IPAM modes supported by the selected IP protocol:<br/><ul><li><strong>DHCP</strong> - will manage the IP on DHCP through assigned DHCP proxy, auto-suggested IPs come from DHCP <em>(IPv4)</em></li><li><strong>Internal DB</strong> - use internal DB to auto-suggest free IP based on other interfaces on same subnet respecting range if specified, useful mainly with static boot mode <em>(IPv4, IPv6)</em></li><li><strong>EUI-64</strong> - will assign the IPv6 address based on the MAC address of the interface <em>(IPv6)</em></li><li><strong>None</strong> - leave IP management solely on user, no auto-suggestion <em>(IPv4, IPv6)</em></li></ul>"
+msgstr ""
 
 msgid "You can't assign locations to this resource"
 msgstr "Non puoi assegnare le posizioni a questa risorsa"
@@ -7886,10 +8147,10 @@ msgstr "È possibile associare uno o più sistemi operativi con questa tabella d
 msgid "You may create puppet classes that represent high-level host configurations, for example, a <b>host-type-ldap-server</b> class, which includes all the required functionality from other modules or you may decide to create a host group called <b>host-type-ldap-server</b> and add the required classes into the host group configuration."
 msgstr "È possibile creare le classi puppet che rappresentano configurazioni host dettagliate, per esempio <b>host-type-ldap-server</b>, le quali includono tutte le funzionalità necessarie di altri moduli, oppure creare un gruppo di host chiamato <b>host-type-ldap-server</b>, e aggiungere le classi necessarie nella configurazione del gruppo di host."
 
-msgid "You must create a location before continuing"
+msgid "You must create a location before continuing."
 msgstr ""
 
-msgid "You must create an organization before continuing"
+msgid "You must create an organization before continuing."
 msgstr ""
 
 msgid "You must create at least one location before continuing."
@@ -7913,9 +8174,6 @@ msgstr "Il tuo account utente di Foreman è stato creato:"
 msgid "Your host has finished building:"
 msgstr ""
 
-msgid "Your libvirt host does not support interface listing, please enter here the bridge name (e.g. br0)"
-msgstr ""
-
 msgid "Your password cannot contain your username"
 msgstr "La tua password non può contenere il nome utente"
 
@@ -7927,6 +8185,9 @@ msgstr "La tua password è troppo corta"
 
 msgid "Your session has expired, please login again"
 msgstr "La sessione è scaduta, eseguire nuovamente la registrazione"
+
+msgid "ZTP template"
+msgstr ""
 
 msgid "Zone"
 msgstr "Zona"
@@ -7979,11 +8240,17 @@ msgstr ""
 msgid "can't be bigger than to range"
 msgstr "non può essere maggiore dell'intervallo"
 
+msgid "can't be blank"
+msgstr ""
+
 msgid "can't be blank unless a custom partition has been defined"
 msgstr "non può essere vuoto a meno che non sia stata definita una partizione personalizzata"
 
 msgid "can't be updated after host is provisioned"
 msgstr "impossibile aggiornarlo dopo il provisioning dell'host"
+
+msgid "can't be updated after subnet is saved"
+msgstr ""
 
 msgid "can't contain spaces."
 msgstr ""
@@ -8005,6 +8272,9 @@ msgstr ""
 
 msgid "cannot be changed on an internal protected account"
 msgstr "non può essere modificato su un account protetto interno"
+
+msgid "cannot be enabled for an unmanaged host"
+msgstr ""
 
 msgid "cannot be removed from an internal protected account"
 msgstr "non può essere rimosso da un account protetto interno"
@@ -8132,6 +8402,9 @@ msgstr "solo per EC2"
 msgid "for Libvirt and VMware only"
 msgstr ""
 
+msgid "for Libvirt only"
+msgstr ""
+
 msgid "for OpenStack only"
 msgstr ""
 
@@ -8146,9 +8419,6 @@ msgstr "per il proxy"
 
 msgid "free memory"
 msgstr "memoria disponibile"
-
-msgid "free swap"
-msgstr "swap disponibile"
 
 msgid "from profile %s"
 msgstr ""
@@ -8195,6 +8465,9 @@ msgstr ""
 msgid "hostname of the host"
 msgstr "hostname dell'host"
 
+msgid "iPXE template"
+msgstr ""
+
 msgid "in %s"
 msgstr "in %s"
 
@@ -8218,9 +8491,6 @@ msgstr "informazioni sull'interfaccia"
 
 msgid "invalid"
 msgstr "Invalido"
-
-msgid "invalid IP address"
-msgstr "indirizzo IP non valido"
 
 msgid "invalid LDAP filter syntax"
 msgstr "sintassi filtro LDAP non valido"
@@ -8261,6 +8531,9 @@ msgstr "è stato già usato da un account utente"
 msgid "is an admin account"
 msgstr "è un account amministrativo"
 
+msgid "is an admin user group"
+msgstr ""
+
 msgid "is an unsupported provisioning method"
 msgstr "è un metodo di provisioning non supportato"
 
@@ -8279,10 +8552,7 @@ msgstr "non è un indirizzo MAC valido"
 msgid "is not allowed to change"
 msgstr "non è possibile cambiare"
 
-msgid "is not defined for host's location."
-msgstr ""
-
-msgid "is not defined for host's organization."
+msgid "is not defined for host's %s."
 msgstr ""
 
 msgid "is not found in the authentication source"
@@ -8299,8 +8569,8 @@ msgid_plural "is too long (maximum is %s characters)"
 msgstr[0] ""
 msgstr[1] ""
 
-msgid "is too long (maximum is 15 characters)"
-msgstr "è troppo lungo (massimo 15 caratteri)"
+msgid "is too long (maximum is 254 characters)"
+msgstr ""
 
 msgid "is unknown"
 msgstr "è sconosciuto "
@@ -8342,8 +8612,8 @@ msgstr ""
 msgid "message"
 msgstr "messaggio"
 
-msgid "must be a valid URI"
-msgstr "deve essere un URI valido"
+msgid "must be a valid regexp"
+msgstr ""
 
 msgid "must be an array"
 msgstr "deve essere un insieme"
@@ -8351,8 +8621,17 @@ msgstr "deve essere un insieme"
 msgid "must be boolean"
 msgstr "deve essere un valore booleano"
 
+msgid "must be comma separated"
+msgstr ""
+
 msgid "must be integer"
 msgstr "deve essere un valore intero"
+
+msgid "must be of type Subnet::Ipv4."
+msgstr ""
+
+msgid "must be of type Subnet::Ipv6."
+msgstr ""
 
 msgid "must be one of [ %s ]"
 msgstr "deve essere uno di [ %s ]"
@@ -8362,6 +8641,12 @@ msgstr "deve essere specificato se è stato dafinito \"da\""
 
 msgid "must be specified if to is defined"
 msgstr "deve essere specificato se è stato dafinito \"a\""
+
+msgid "must be true to edit the parameter"
+msgstr ""
+
+msgid "must contain valid hostnames"
+msgstr ""
 
 msgid "must not include periods"
 msgstr "non deve includere il carattere punto"
@@ -8381,6 +8666,9 @@ msgstr "permesso nil"
 msgid "nil means host is bare metal"
 msgstr "nil indica che l'host è bare metal"
 
+msgid "no free IP could be found in our DB"
+msgstr ""
+
 msgid "no puppet proxy defined - cant continue"
 msgstr "non è stato definito alcun proxy del puppet - impossibile continuare"
 
@@ -8398,6 +8686,9 @@ msgstr "non rilevante per lo snippet"
 
 msgid "not required if using a subnet with DHCP proxy"
 msgstr "non necessario se si utilizza una sottorete con DHCP proxy"
+
+msgid "not supported by this protocol"
+msgstr ""
 
 msgid "number of entries per request"
 msgstr "numero di voci per richiesta"
@@ -8565,6 +8856,9 @@ msgstr "stop"
 msgid "string"
 msgstr "stringa"
 
+msgid "subnet"
+msgstr ""
+
 msgid "subnet boot mode is not %s"
 msgstr ""
 
@@ -8583,8 +8877,14 @@ msgstr "host per una compilazione al riavvio successivo"
 msgid "type of the LDAP server"
 msgstr ""
 
+msgid "unable to find %{type} template for %{host} running %{os}"
+msgstr ""
+
 msgid "unable to sign a non pending certificate"
 msgstr "impossibile firmare un certificato non in attesa"
+
+msgid "unknown network_type"
+msgstr ""
 
 msgid "unknown parent permission for %s"
 msgstr ""
@@ -8603,9 +8903,6 @@ msgstr "non specificato"
 
 msgid "used memory"
 msgstr "memoria usata"
-
-msgid "used swap"
-msgstr "swap utilizzato"
 
 msgid "useful template functions and macros"
 msgstr ""

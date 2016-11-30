@@ -1,13 +1,15 @@
 module Api
   module V2
     class HostsController < V2::BaseController
-      wrap_parameters :host, :include => Host::Managed.accessible_attributes
-
       include Api::Version2
-      include Api::TaxonomyScope
-      include Foreman::Controller::SmartProxyAuth
-
       include Api::CompatibilityChecker
+      include Api::TaxonomyScope
+      include ScopesPerAction
+      include Foreman::Controller::SmartProxyAuth
+      include Foreman::Controller::Parameters::Host
+
+      wrap_parameters :host, :include => host_params_filter.accessible_attributes(parameter_filter_context) + ['compute_attributes']
+
       before_action :check_create_host_nested, :only => [:create, :update]
 
       before_action :find_optional_nested_object, :except => [:facts]
@@ -15,6 +17,8 @@ module Api
       before_action :permissions_check, :only => %w{power boot puppetrun}
 
       add_smart_proxy_filters :facts, :features => Proc.new { FactImporter.fact_features }
+
+      add_scope_for(:index) { |base_scope| base_scope.eager_load([:host_statuses, :compute_resource, :hostgroup, :operatingsystem, :interfaces, :token]) }
 
       api :GET, "/hosts/", N_("List all hosts")
       api :GET, "/hostgroups/:hostgroup_id/hosts", N_("List all hosts for a host group")
@@ -25,19 +29,27 @@ module Api
       param :location_id, String, :desc => N_("ID of location")
       param :organization_id, String, :desc => N_("ID of organization")
       param :environment_id, String, :desc => N_("ID of environment")
+      param :include, Array, :in => ['parameters', 'all_parameters'], :desc => N_("Array of extra information types to include")
       param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @hosts = resource_scope_for_index.includes([ :host_statuses, :compute_resource, :hostgroup, :operatingsystem, :interfaces, :token ])
+        @hosts = action_scope_for(:index, resource_scope_for_index)
+
         # SQL optimizations queries
         @last_report_ids = Report.where(:host_id => @hosts.map(&:id)).group(:host_id).maximum(:id)
         @last_reports = Report.where(:id => @last_report_ids.values)
+        if params[:include].present?
+          @parameters = params[:include].include?('parameters')
+          @all_parameters = params[:include].include?('all_parameters')
+        end
       end
 
       api :GET, "/hosts/:id/", N_("Show a host")
       param :id, :identifier_dottable, :required => true
 
       def show
+        @parameters = true
+        @all_parameters = true
       end
 
       def_param_group :host do
@@ -51,10 +63,13 @@ module Api
           param :architecture_id, :number, :desc => N_("required if host is managed and value is not inherited from host group")
           param :domain_id, :number, :desc => N_("required if host is managed and value is not inherited from host group")
           param :realm_id, :number
-          param :puppet_proxy_id, :number
+          Host.registered_smart_proxies.each do |name, options|
+            param :"#{name}_id", :number, :desc => options[:api_description]
+          end
           param :puppetclass_ids, Array
           param :operatingsystem_id, String, :desc => N_("required if host is managed and value is not inherited from host group")
           param :medium_id, String, :desc => N_("required if not imaged based provisioning and host is managed and value is not inherited from host group")
+          param :pxe_loader, Operatingsystem.all_loaders, :desc => N_("DHCP filename option (Grub2/PXELinux by default)")
           param :ptable_id, :number, :desc => N_("required if host is managed and custom partition has not been defined")
           param :subnet_id, :number, :desc => N_("required if host is managed and value is not inherited from host group")
           param :compute_resource_id, :number, :desc => N_("nil means host is bare metal")
@@ -63,7 +78,6 @@ module Api
           param :hostgroup_id, :number
           param :owner_id, :number
           param :owner_type, Host::Base::OWNER_TYPES, :desc => N_("Host's owner type")
-          param :puppet_ca_proxy_id, :number
           param :image_id, :number
           param :host_parameters_attributes, Array, :desc => N_("Host's parameters (array or indexed hash)") do
             param :name, String, :desc => N_("Name of the parameter"), :required => true
@@ -95,7 +109,7 @@ module Api
       param_group :host, :as => :create
 
       def create
-        @host = Host.new(host_attributes(params[:host]))
+        @host = Host.new(host_attributes(host_params))
         @host.managed = true if (params[:host] && params[:host][:managed].nil?)
         apply_compute_profile(@host)
 
@@ -110,7 +124,7 @@ module Api
       param_group :host
 
       def update
-        @host.attributes = host_attributes(params[:host], @host)
+        @host.attributes = host_attributes(host_params, @host)
         apply_compute_profile(@host)
 
         process_response @host.save
@@ -123,6 +137,13 @@ module Api
 
       def destroy
         process_response @host.destroy
+      end
+
+      api :GET, "/hosts/:id/enc", N_("Get ENC values of host")
+      param :id, :identifier_dottable, :required => true
+
+      def enc
+        render :json => { :data => @host.info }
       end
 
       api :GET, "/hosts/:id/status", N_("Get configuration status of host")
@@ -224,6 +245,8 @@ Return the host's compute attributes that can be used to create a clone of this 
         else
           render :json => { :error => _("Unknown device: available devices are %s") % valid_devices.join(', ') }, :status => :unprocessable_entity
         end
+      rescue ::Foreman::Exception => e
+        render_message(e.to_s, :status => :unprocessable_entity)
       end
 
       api :POST, "/hosts/facts", N_("Upload facts for a host, creating the host if required")
@@ -306,7 +329,7 @@ Return the host's compute attributes that can be used to create a clone of this 
             :console
           when 'disassociate'
             :edit
-          when 'vm_compute_attributes', 'get_status', 'template'
+          when 'vm_compute_attributes', 'get_status', 'template', 'enc'
             :view
           when 'rebuild_config'
             :build
@@ -333,7 +356,7 @@ Return the host's compute attributes that can be used to create a clone of this 
       end
 
       def permissions_check
-        permission = "#{params[:action]}_hosts".to_sym
+        permission = "#{action_permission}_hosts".to_sym
         deny_access unless Host.authorized(permission, Host).find(@host.id)
       end
 

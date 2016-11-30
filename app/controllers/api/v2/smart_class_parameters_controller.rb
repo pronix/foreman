@@ -3,6 +3,10 @@ module Api
     class SmartClassParametersController < V2::BaseController
       include Api::Version2
       include Api::V2::LookupKeysCommonController
+      include Foreman::Controller::Parameters::PuppetclassLookupKey
+
+      before_action :rename_use_puppet_default, :only => [:update]
+
       alias_method :resource_scope, :smart_class_parameters_resource_scope
 
       api :GET, "/smart_class_parameters", N_("List all smart class parameters")
@@ -37,7 +41,8 @@ module Api
         param :description, String, :desc => N_("Description of smart class")
         param :default_value, String, :desc => N_("Value to use when there is no match")
         param :hidden_value, :bool, :desc => N_("When enabled the parameter is hidden in the UI")
-        param :use_puppet_default, :bool, :desc => N_("Do not send this parameter via the ENC. Puppet will use the value defined in the Puppet manifest for this parameter")
+        param :use_puppet_default, :bool, :desc => N_("Deprecated, please use omit")
+        param :omit, :bool, :desc => N_("Foreman will not send this parameter in classification output. Puppet will use the value defined in the Puppet manifest for this parameter")
         param :path, String, :desc => N_("The order in which values are resolved")
         param :validator_type, LookupKey::VALIDATOR_TYPES, :desc => N_("Types of validation values")
         param :validator_rule, String, :desc => N_("Used to enforce certain values for the parameter values")
@@ -51,13 +56,20 @@ module Api
 
       def update
         #Note:  User must manually set :override => true. It is not automatically updated if optional input validator fields are updated.
-        @smart_class_parameter.update_attributes!(params[:smart_class_parameter])
+        @smart_class_parameter.update_attributes!(puppetclass_lookup_key_params)
         render 'api/v2/smart_class_parameters/show'
       end
 
       # overwrite Api::BaseController
       def resource_class
         LookupKey
+      end
+
+      def rename_use_puppet_default
+        return unless params[:smart_class_parameter] && params[:smart_class_parameter].key?(:use_puppet_default)
+
+        params[:smart_class_parameter][:omit] = params[:smart_class_parameter].delete(:use_puppet_default)
+        Foreman::Deprecation.api_deprecation_warning('"use_puppet_default" was renamed to "omit"')
       end
     end
   end

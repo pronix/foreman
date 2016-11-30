@@ -17,6 +17,10 @@ class Debian < Operatingsystem
     super(medium, architecture, host).each{ |img_uri| img_uri.path = img_uri.path.gsub('x86_64','amd64') }
   end
 
+  def available_loaders
+    self.class.all_loaders
+  end
+
   def pxe_type
     "preseed"
   end
@@ -38,10 +42,6 @@ class Debian < Operatingsystem
     s.squeeze! " "
     s.strip!
     s.blank? ? description : s
-  end
-
-  def self.model_name
-    superclass.model_name
   end
 
   private

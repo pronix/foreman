@@ -1,3 +1,8 @@
+//= require ace-rails-ap
+//= require ace/keybinding-emacs
+//= require ace/keybinding-vim
+//= require ace/theme-twilight
+
 var Editor;
 
 $(document).on('ContentLoad', function(){onEditorLoad()});
@@ -22,18 +27,12 @@ $(document).on('change','#mode', function(){
 
 function onEditorLoad(){
   var editor_source = $(".editor_source");
-  if ($.browser && $.browser.msie && $.browser.version.slice(0,1) < 10) {
+  if (editor_source.exists()){
+    create_editor();
     if ($('.diffMode').exists()) {
-      IE_diff_mode(editor_source);
-    }
-  }else{
-    if (editor_source.exists()){
-      create_editor();
-      if ($('.diffMode').exists()) {
-        set_diff_mode(editor_source);
-      } else {
-        set_edit_mode(editor_source);
-      }
+      set_diff_mode(editor_source);
+    } else {
+      set_edit_mode(editor_source);
     }
   }
 }
@@ -227,12 +226,6 @@ function submit_code() {
   }
 }
 
-function IE_diff_mode(item){
-  var patch = JsDiff.createPatch(item.attr('data-file-name'), $('#old').val(), $('#new').val());
-  item.val(patch);
-  item.attr('readOnly', true);
-}
-
 function revert_template(item){
   if (!confirm(__("You are about to override the editor content with a previous version, are you sure?"))) return;
 
@@ -247,9 +240,6 @@ function revert_template(item){
       if ($('#new').length) {
         $('#new').val(res.responseText);
         set_edit_mode($('.editor_source'));
-      } else {
-        // IE < 10
-        $('.editor_source').val(res.responseText);
       }
       var time = $(item).closest('div.row').find('h6 span').attr('data-original-title');
       $('#provisioning_template_audit_comment').text(Jed.sprintf(__("Revert to revision from: %s"), time))

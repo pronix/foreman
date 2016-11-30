@@ -2,8 +2,7 @@ class Model < ActiveRecord::Base
   include Authorizable
   extend FriendlyId
   friendly_id :name
-
-  attr_accessible :name, :hardware_model, :vendor_class, :info
+  include Parameterizable::ByIdName
 
   before_destroy EnsureNotUsedBy.new(:hosts)
   has_many_hosts

@@ -1,10 +1,6 @@
 class Solaris < Operatingsystem
   PXEFILES = {:initrd => "x86.miniroot", :kernel => "multiboot"}
 
-  class << self
-    delegate :model_name, :to => :superclass
-  end
-
   def file_prefix
     (self).to_s.gsub(/[\s\(\)]/,"-").gsub("--", "-").gsub(/-\Z/, "")
   end
@@ -23,14 +19,12 @@ class Solaris < Operatingsystem
     "jumpstart"
   end
 
-  # The variant to use when communicating with the proxy. Syslinux are pxegrub currently supported
-  def pxe_variant
-    "pxegrub"
+  def available_loaders
+    ["None"]
   end
 
-  # The kind of PXE configuration template used. PXELinux and PXEGrub are currently supported
-  def template_kind
-    "PXEGrub"
+  def template_kinds
+    ["PXEGrub"]
   end
 
   def pxedir
@@ -42,7 +36,6 @@ class Solaris < Operatingsystem
   end
 
   def boot_filename(host)
-    #handle things like gpxelinux/ gpxe / pxelinux here
     if host.jumpstart?
       "Solaris-#{major}.#{minor}-#{release_name}-#{host.model.hardware_model}-inetboot"
     else

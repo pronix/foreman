@@ -41,3 +41,6 @@ pkg/
 config/hooks
 *.csv
 .envrc
+node_modules
+public/webpack
+.env*

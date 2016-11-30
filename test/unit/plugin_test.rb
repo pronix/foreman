@@ -17,7 +17,10 @@
 
 require 'test_helper'
 
-module Awesome; module Provider; class MyAwesome < ::ComputeResource; end; end; end
+module Awesome
+  module Provider; class MyAwesome < ::ComputeResource; end; end
+  def self.register_smart_proxy(name, options = {}); end
+end
 module Awesome; class FakeFacet; end; end
 
 class PluginTest < ActiveSupport::TestCase
@@ -344,6 +347,26 @@ class PluginTest < ActiveSupport::TestCase
     Host::Managed.cloned_parameters[:include].delete(:fake_facet)
   end
 
+  def test_register_facet_resilience
+    old_config = Facets.instance_variable_get('@configuration')
+    Facets.instance_variable_set('@configuration', nil)
+
+    Foreman::Plugin.register :awesome_facet do
+      name 'Awesome facet'
+      register_facet(Awesome::FakeFacet, :fake_facet) do
+        api_view :list => 'api/v2/awesome/index', :single => 'api/v2/awesome/show'
+      end
+    end
+
+    # reset the configuration
+    Facets.instance_variable_set('@configuration', nil)
+
+    assert Facets.registered_facets[:fake_facet]
+
+    Host::Managed.cloned_parameters[:include].delete(:fake_facet)
+    Facets.instance_variable_set('@configuration', old_config)
+  end
+
   def test_add_template_label
     kind = FactoryGirl.build(:template_kind)
     Foreman::Plugin.register :test_template_kind do
@@ -351,5 +374,84 @@ class PluginTest < ActiveSupport::TestCase
       template_labels kind.name => 'Test plugin template kind'
     end
     assert_equal 'Test plugin template kind', kind.to_s
+  end
+
+  def test_add_parameter_filter
+    Foreman::Plugin.register :test_parameter_filter do
+      name 'Parameter filter test'
+      parameter_filter Domain, :foo, :bar => [], :ui => true
+    end
+    assert_equal([], Foreman::Plugin.find(:test_parameter_filter).parameter_filters(User))
+    assert_equal([[:foo, :bar => [], :ui => true]], Foreman::Plugin.find(:test_parameter_filter).parameter_filters(Domain))
+    assert_equal([[:foo, :bar => [], :ui => true]], Foreman::Plugin.find(:test_parameter_filter).parameter_filters('Domain'))
+  end
+
+  def test_add_parameter_filter_block
+    Foreman::Plugin.register :test_parameter_filter do
+      name 'Parameter filter test'
+      parameter_filter(Domain) { |ctx| ctx.permit(:foo) }
+    end
+    assert_kind_of Proc, Foreman::Plugin.find(:test_parameter_filter).parameter_filters(Domain).first.first
+  end
+
+  def test_add_smart_proxy_for
+    Foreman::Plugin.register :test_smart_proxy do
+      name 'Smart Proxy test'
+      smart_proxy_for Awesome, :foo, :feature => 'Foo'
+    end
+    assert_equal({}, Foreman::Plugin.find(:test_smart_proxy).smart_proxies(User))
+    assert_equal({:foo => {:feature => 'Foo'}}, Foreman::Plugin.find(:test_smart_proxy).smart_proxies(Awesome))
+  end
+
+  def test_hosts_controller_action_scope
+    mock_scope = ->(scope) { scope }
+    Foreman::Plugin.register :test_hosts_controller_action_scope do
+      add_controller_action_scope HostsController, :test_action, &mock_scope
+    end
+    scopes = HostsController.scopes_for(:test_action)
+    assert_equal mock_scope, scopes.last
+  end
+
+  def test_hosts_controller_action_scope_added_to_local
+    mock_scope = ->(scope) { scope }
+    HostsController.add_scope_for(:test_action) do |scope|
+      scope
+    end
+    Foreman::Plugin.register :test_hosts_controller_action_scope_added_to_local do
+      add_controller_action_scope HostsController, :test_action, &mock_scope
+    end
+    scopes = HostsController.scopes_for(:test_action)
+    assert_equal 2, scopes.count
+  end
+
+  context "adding permissions" do
+    teardown do
+      permission = Foreman::AccessControl.permission(:test_permission)
+      Foreman::AccessControl.remove_permission(permission) if permission
+    end
+
+    def test_add_permission
+      Foreman::Plugin.register :test_permission do
+        name 'Permission test'
+        security_block :test_permission do
+          permission :test_permission, {:controller_name => [:test]}
+        end
+      end
+      assert_includes Foreman::Plugin.find(:test_permission).permissions.keys, :test_permission
+      ac_permission = Foreman::AccessControl.permission(:test_permission)
+      assert ac_permission, ":test_permission is not registered in Foreman::AccessControl"
+      assert_equal ['controller_name/test'], ac_permission.actions
+    end
+
+    def test_add_role
+      Foreman::Plugin.register :test_role do
+        name 'Role test'
+        security_block :test_permission do
+          permission :test_permission, {:controller_name => [:test]}
+        end
+        role 'Test role', [:test_permission]
+      end
+      assert_equal({'Test role' => [:test_permission]}, Foreman::Plugin.find(:test_role).default_roles)
+    end
   end
 end

@@ -50,11 +50,6 @@ attributes10:
   category: Setting::Puppet
   default: /etc/puppet/modules
   description: "The Setting::Puppet default module path in case that Foreman can't auto detect it"
-attributes11:
-  name: document_root
-  category: Setting::Puppet
-  default: /home/olevy/git/foreman/public/puppet/rdoc
-  description: Document root where puppetdoc files should be created
 attributes12:
   name: puppet_server
   category: Setting::Puppet
@@ -291,3 +286,25 @@ attributes60:
   category: Setting::General
   default: 30
   description: 'Max days for Trends graphs'
+attributes61:
+  name: name_generator_type
+  settings_type: string
+  category: Setting::Provisioning
+  default: "Random-based"
+  description: 'Random gives unique names, MAC-based are longer but stable (and only works with bare-metal)'
+attributes62:
+  name: bmc_credentials_accessible
+  category: Setting::Auth
+  default: "true"
+  description: 'Permits access to BMC interface passwords through ENC YAML output and in templates'
+attributes63:
+  name: password
+  category: Setting::Puppet
+  default: nil
+  description: 'Encrypted password'
+  encrypted: true
+attributes64:
+  name: access_unattended_without_build
+  category: Setting::Provisioning
+  default: "false"
+  description: 'Allow access to unattended URLs without build mode being used'

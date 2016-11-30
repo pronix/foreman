@@ -9,13 +9,13 @@ class User < ActiveRecord::Base
   include Taxonomix
   include DirtyAssociations
   include UserTime
-  audited :except => [:last_login_on, :password, :password_hash, :password_salt, :password_confirmation], :allow_mass_assignment => true
+  audited :except => [:last_login_on, :password, :password_hash, :password_salt, :password_confirmation]
 
   ANONYMOUS_ADMIN = 'foreman_admin'
   ANONYMOUS_API_ADMIN = 'foreman_api_admin'
 
   validates_lengths_from_database :except => [:firstname, :lastname, :format, :mail, :login]
-  attr_accessor :password, :password_confirmation
+  attr_accessor :password, :password_confirmation, :current_password
   after_save :ensure_default_role
   before_destroy EnsureNotUsedBy.new([:direct_hosts, :hosts]), :ensure_hidden_users_are_not_deleted, :ensure_last_admin_is_not_deleted
 
@@ -41,14 +41,6 @@ class User < ActiveRecord::Base
   has_many :mail_notifications, :through => :user_mail_notifications
 
   accepts_nested_attributes_for :user_mail_notifications, :allow_destroy => true, :reject_if => :reject_empty_intervals
-  attr_accessible :password, :password_confirmation, :login, :firstname,
-    :lastname, :mail, :locale, :mail_enabled,
-    :default_location_id, :default_organization_id,
-    :auth_source_name, :auth_source, :auth_source_id,
-    :mail_notification_ids, :mail_notification_names,
-    :mail_notification_attributes,
-    :roles, :role_ids, :role_names,
-    :user_mail_notifications_attributes
 
   attr_name :login
 
@@ -93,6 +85,8 @@ class User < ActiveRecord::Base
   validate :name_used_in_a_usergroup, :ensure_hidden_users_are_not_renamed, :ensure_hidden_users_remain_admin,
            :ensure_privileges_not_escalated, :default_organization_inclusion, :default_location_inclusion,
            :ensure_last_admin_remains_admin, :hidden_authsource_restricted, :ensure_admin_password_changed_by_admin
+  before_validation :verify_current_password, :if => Proc.new {|user| user == User.current},
+                    :unless => Proc.new {|user| user.password.empty?}
   before_validation :prepare_password, :normalize_mail
   before_save       :set_lower_login
 
@@ -103,6 +97,7 @@ class User < ActiveRecord::Base
   scoped_search :on => :firstname, :complete_value => :true
   scoped_search :on => :lastname, :complete_value => :true
   scoped_search :on => :mail, :complete_value => :true
+  scoped_search :on => :description, :complete_value => false
   scoped_search :on => :admin, :complete_value => { :true => true, :false => false }, :ext_method => :search_by_admin
   scoped_search :on => :last_login_on, :complete_value => :true, :only_explicit => true
   scoped_search :in => :roles, :on => :name, :rename => :role, :complete_value => true
@@ -173,11 +168,11 @@ class User < ActiveRecord::Base
   end
 
   def self.anonymous_admin
-    unscoped.find_by_login ANONYMOUS_ADMIN or raise Foreman::Exception.new(N_("Anonymous admin user %s is missing, run foreman-rake db:seed"), ANONYMOUS_ADMIN)
+    unscoped.find_by_login(ANONYMOUS_ADMIN) || raise(Foreman::Exception.new(N_("Anonymous admin user %s is missing, run foreman-rake db:seed"), ANONYMOUS_ADMIN))
   end
 
   def self.anonymous_api_admin
-    unscoped.find_by_login ANONYMOUS_API_ADMIN or raise Foreman::Exception.new(N_("Anonymous admin user %s is missing, run foreman-rake db:seed"), ANONYMOUS_API_ADMIN)
+    unscoped.find_by_login(ANONYMOUS_API_ADMIN) || raise(Foreman::Exception.new(N_("Anonymous admin user %s is missing, run foreman-rake db:seed"), ANONYMOUS_API_ADMIN))
   end
 
   # Tries to find the user in the DB and then authenticate against their authentication source
@@ -238,7 +233,7 @@ class User < ActiveRecord::Base
 
   def self.find_or_create_external_user(attrs, auth_source_name)
     external_groups = attrs.delete(:groups)
-    auth_source = AuthSource.find_by_name(auth_source_name)
+    auth_source = AuthSource.find_by_name(auth_source_name.to_s)
 
     # existing user, we'll update them
     if (user = unscoped.find_by_login(attrs[:login]))
@@ -372,6 +367,14 @@ class User < ActiveRecord::Base
     TopbarSweeper.expire_cache(self)
   end
 
+  def my_organizations
+    Organization.my_organizations(self)
+  end
+
+  def my_locations
+    Location.my_locations(self)
+  end
+
   def taxonomy_and_child_ids(taxonomies)
     ids = []
     send(taxonomies).each do |taxonomy|
@@ -403,41 +406,45 @@ class User < ActiveRecord::Base
   end
 
   def self.try_to_auto_create_user(login, password)
-    return nil if login.blank? || password.blank?
-
-    # user is not yet registered, try to authenticate with available sources
+    return if login.blank? || password.blank?
+    # User is not yet registered, try to authenticate with available sources
     logger.debug "Attempting to log into an auth source as #{login} for account auto-creation"
-    if (attrs = AuthSource.authenticate(login, password))
-      attrs.delete(:dn)
-      user = new(attrs)
+    return unless (attrs = AuthSource.authenticate(login, password))
 
-      # If an invalid data returned from an authentication source for any attribute(s) then set its value as nil
-      saved_attrs = {}
-      unless user.valid?
-        user.errors.each do |attr|
-          saved_attrs[attr] = user[attr]
-          user[attr] = nil
-        end
-      end
-
-      # The default user can't auto create users, we need to change to Admin for this to work
-      User.as_anonymous_admin do
-        if user.save
-          AuthSource.find(attrs[:auth_source_id]).update_usergroups(user.login)
-          logger.info "User '#{user.login}' auto-created from #{user.auth_source}"
-        else
-          logger.info "Failed to save User '#{user.login}' #{user.errors.full_messages}"
-          user = nil
-        end
-      end
-
-      # Restore any invalid attributes after creation, so the method returns a saved user object but
-      # any errors from invalid data are still visible to the caller
-      user.attributes = saved_attrs
-      user.valid?
-
-      user
+    attrs.delete(:dn)
+    user = new(attrs)
+    # Inherit taxonomies from authentication source on creation
+    auth_source = AuthSource.find(attrs[:auth_source_id])
+    Taxonomy.enabled_taxonomies.each do |taxonomy|
+      user.public_send("#{taxonomy}=", auth_source.public_send(taxonomy))
     end
+
+    # If an invalid data returned from an authentication source for any attribute(s) then set its value as nil
+    saved_attrs = {}
+    unless user.valid?
+      user.errors.each do |attr|
+        saved_attrs[attr] = user[attr]
+        user[attr] = nil
+      end
+    end
+
+    # The default user can't auto create users, we need to change to Admin for this to work
+    User.as_anonymous_admin do
+      if user.save
+        auth_source.update_usergroups(user.login)
+        logger.info "User '#{user.login}' auto-created from #{user.auth_source}"
+      else
+        logger.info "Failed to save User '#{user.login}' #{user.errors.full_messages}"
+        user = nil
+      end
+    end
+
+    # Restore any invalid attributes after creation, so the method returns a saved user object but
+    # any errors from invalid data are still visible to the caller
+    user.attributes = saved_attrs
+    user.valid?
+
+    user
   end
 
   private
@@ -475,6 +482,12 @@ class User < ActiveRecord::Base
 
   def set_default_widgets
     Dashboard::Manager.reset_user_to_default(self)
+  end
+
+  def verify_current_password
+    unless self.matching_password?(current_password)
+      errors.add :current_password, _("Incorrect password")
+    end
   end
 
   protected

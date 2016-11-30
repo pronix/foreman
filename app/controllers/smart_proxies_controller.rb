@@ -1,5 +1,6 @@
 class SmartProxiesController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
+  include Foreman::Controller::Parameters::SmartProxy
 
   before_action :find_resource, :only => [:show, :edit, :update, :refresh, :ping, :tftp_server, :destroy, :puppet_environments, :puppet_dashboard, :log_pane, :failed_modules, :errors_card, :modules_card, :expire_logs]
   before_action :find_status, :only => [:ping, :tftp_server, :puppet_environments]
@@ -16,7 +17,7 @@ class SmartProxiesController < ApplicationController
   end
 
   def create
-    @smart_proxy = SmartProxy.new(params[:smart_proxy])
+    @smart_proxy = SmartProxy.new(smart_proxy_params)
     if @smart_proxy.save
       process_success :object => @smart_proxy
     else
@@ -61,17 +62,14 @@ class SmartProxiesController < ApplicationController
   end
 
   def puppet_dashboard
-    dashboard = Dashboard::Data.new("puppetmaster = \"#{@smart_proxy.name}\"")
-    @hosts = dashboard.hosts
-    @report = dashboard.report
-    @latest_events = dashboard.latest_events
-    render :partial => 'smart_proxies/plugins/puppet_dashboard', :locals => { :dashboard => dashboard }
+    @data = Dashboard::Data.new("puppet_proxy_id = \"#{@smart_proxy.id}\"")
+    render :partial => 'smart_proxies/plugins/puppet_dashboard'
   rescue Foreman::Exception => exception
     process_ajax_error exception
   end
 
   def update
-    if @smart_proxy.update_attributes(params[:smart_proxy])
+    if @smart_proxy.update_attributes(smart_proxy_params)
       process_success :object => @smart_proxy
     else
       process_error :object => @smart_proxy
@@ -141,7 +139,7 @@ class SmartProxiesController < ApplicationController
     data = yield
     render :json => {:success => true, :message => data }
   rescue Foreman::Exception => exception
-    render :json => {:success => false, :message => exception.message} and return
+    render :json => {:success => false, :message => exception.message}
   end
 
   def action_permission

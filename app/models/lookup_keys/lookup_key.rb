@@ -9,7 +9,7 @@ class LookupKey < ActiveRecord::Base
   EQ_DELM  = "="
   VALUE_REGEX =/\A[^#{KEY_DELM}]+#{EQ_DELM}[^#{KEY_DELM}]+(#{KEY_DELM}[^#{KEY_DELM}]+#{EQ_DELM}[^#{KEY_DELM}]+)*\Z/
 
-  audited :associated_with => :audit_class, :allow_mass_assignment => true
+  audited :associated_with => :audit_class
   validates_lengths_from_database
 
   serialize :default_value
@@ -20,14 +20,11 @@ class LookupKey < ActiveRecord::Base
                                 :allow_destroy => true
 
   alias_attribute :value, :default_value
-  before_validation :cast_default_value
 
   validates :key, :presence => true
   validates :validator_type, :inclusion => { :in => VALIDATOR_TYPES, :message => N_("invalid")}, :allow_blank => true, :allow_nil => true
   validates :key_type, :inclusion => {:in => KEY_TYPES, :message => N_("invalid")}, :allow_blank => true, :allow_nil => true
-  validate :validate_default_value
   validates_associated :lookup_values
-  validate :disable_merge_overrides, :disable_avoid_duplicates, :disable_merge_default
 
   before_save :sanitize_path
   attr_name :key
@@ -59,19 +56,6 @@ class LookupKey < ActiveRecord::Base
   alias_attribute :override_value_order, :path
   alias_attribute :override_values, :lookup_values
   alias_attribute :override_value_ids, :lookup_value_ids
-
-  attr_accessible :avoid_duplicates, :default_value, :description,
-    :key, :key_type, :hidden_value,
-    :lookup_values_attributes, :lookup_values, :lookup_value_ids,
-    :merge_overrides, :merge_default,
-    :override, :override_value_order, :override_values,
-    :override_value_ids,
-    :path,
-    :parameter_type,
-    :puppetclass_id,
-    :use_puppet_default,
-    :validator_type, :validator_rule,
-    :variable, :variable_type
 
   # to prevent errors caused by find_resource from override_values controller
   def self.find_by_name(str)

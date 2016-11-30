@@ -32,8 +32,8 @@ class UnattendedController < ApplicationController
   def hostgroup_template
     return head(:not_found) unless (params.has_key?("id") && params.has_key?(:hostgroup))
 
-    template = ProvisioningTemplate.find_by_name(params['id'])
-    @host = Hostgroup.find_by_title(params['hostgroup'])
+    template = ProvisioningTemplate.find_by_name(params['id'].to_s)
+    @host = Hostgroup.find_by_title(params['hostgroup'].to_s)
     return head(:not_found) unless template && @host
 
     load_template_vars if template.template_kind.name == 'provision'
@@ -57,7 +57,7 @@ class UnattendedController < ApplicationController
   private
 
   def preview?
-    params.key?(:spoof) or params.key?(:hostname)
+    params.key?(:spoof) || params.key?(:hostname)
   end
 
   def render_custom_error(status, error_message, params)
@@ -71,7 +71,6 @@ class UnattendedController < ApplicationController
     type = 'iPXE' if type == 'gPXE'
 
     if (config = @host.provisioning_template({ :kind => type }))
-      logger.debug "rendering DB template #{config.name} - #{type}"
       if !preview?
         User.as_anonymous_admin do
           safe_render config
@@ -153,7 +152,7 @@ class UnattendedController < ApplicationController
   end
 
   def allowed_to_install?
-    (@host.build || @spoof) ? true : head(:method_not_allowed)
+    (@host.build || @spoof || Setting[:access_unattended_without_build]) ? true : head(:method_not_allowed)
   end
 
   # Cleans Certificate and enable autosign. This is run as a before_action for provisioning templates.
@@ -211,22 +210,22 @@ class UnattendedController < ApplicationController
   end
 
   def safe_render(template)
-    @template_name = 'Unnamed'
     if template.is_a?(String)
-      @unsafe_template  = template
+      @unsafe_template_content = template
+      @template_name = 'Unnamed'
     elsif template.is_a?(ProvisioningTemplate)
-      @unsafe_template  = template.template
+      @unsafe_template_content = template.template
       @template_name = template.name
     else
       raise "unknown template"
     end
 
     begin
-      render :inline => "<%= unattended_render(@unsafe_template, @template_name).html_safe %>" and return
+      render :inline => "<%= unattended_render(@unsafe_template_content, @template_name).html_safe %>"
     rescue => error
       msg = _("There was an error rendering the %s template: ") % (@template_name)
       Foreman::Logging.exception(msg, error)
-      render :text => msg + error.message, :status => :internal_server_error and return
+      render :text => msg + error.message, :status => :internal_server_error
     end
   end
 end

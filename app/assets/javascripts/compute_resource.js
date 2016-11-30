@@ -7,7 +7,7 @@ $(function() {
         $(this).closest(".tab-content").find("#spinner").html(Jed.sprintf(__("There was an error listing VMs: %(status)s %(statusText)s"), {status: xhr.status, statusText: xhr.statusText}));
       }
       else {
-        activateDatatables();
+        tfm.tools.activateDatatables();
       }
     });
   });
@@ -47,13 +47,18 @@ function testConnection(item) {
       if (!$("#compute_resource_provider").prop('disabled')) {
         $("#compute_resource_password").prop('disabled', false);
       }
-      if (!/alert-danger/i.test(result)) {
+      if ( ($('.alert-danger', result).length == 0) &&
+           ($('#compute_connection .has-error', result).length == 0) ) {
         notify("<p>" + __("Test connection was successful") + "</p>", 'success')
       }
+    },
+    error:function (xhr) {
+      notify("<p>" + __("An error occurred while testing the connection: ") + xhr.statusText + "</p>", 'danger')
     },
     complete:function (result) {
       //we need to restore the password field as it is not sent back from the server.
       $("input#compute_resource_password").val(password);
+      $('#test_connection_indicator').hide();
       reloadOnAjaxComplete('#test_connection_indicator');
     }
   });
@@ -63,7 +68,7 @@ function ovirt_templateSelected(item){
   var template = $(item).val();
   if (template) {
     var url = $(item).attr('data-url');
-    foreman.tools.showSpinner();
+    tfm.tools.showSpinner();
     $.ajax({
       type:'post',
       url: url,
@@ -121,7 +126,7 @@ function bootable_radio(item){
 function ovirt_clusterSelected(item){
   var cluster = $(item).val();
   var url = $(item).attr('data-url');
-  foreman.tools.showSpinner();
+  tfm.tools.showSpinner();
   $.ajax({
       type:'post',
       url: url,
@@ -179,7 +184,7 @@ function libvirt_image_selected(item){
   var template = $(item).val();
   if (template) {
     var url = $(item).attr('data-url');
-    foreman.tools.showSpinner();
+    tfm.tools.showSpinner();
     $.ajax({
       type:'post',
       url: url,
@@ -247,14 +252,14 @@ function allocation_switcher(element, action) {
 function vsphereGetResourcePools(item) {
   var data = {cluster_id: $(item).val()};
   var url = $(item).data('url');
-  foreman.tools.showSpinner();
-  selectbox = $('*[id*=resource_pool]');
+  tfm.tools.showSpinner();
+  selectbox = $('select[id$="resource_pool"]');
   selectbox.select2('destroy').empty();
   $.ajax({
     type: 'get',
     url: url,
     data: data,
-    complete: function() { foreman.tools.hideSpinner();},
+    complete: function() { tfm.tools.hideSpinner();},
     success: function(request) {
       for (var i = 0; i < request.length; i++) {
         var option = request[i].name;

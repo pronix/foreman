@@ -5,9 +5,10 @@ module Api
       include Api::TaxonomyScope
       include Foreman::Renderer
       include Foreman::Controller::ProvisioningTemplates
+      include Foreman::Controller::Parameters::ProvisioningTemplate
 
       before_action :find_optional_nested_object
-      before_action :find_resource, :only => %w{show update destroy clone}
+      before_action :find_resource, :only => %w{show update destroy clone export}
 
       before_action :handle_template_upload, :only => [:create, :update]
       before_action :process_template_kind, :only => [:create, :update]
@@ -50,7 +51,7 @@ module Api
       param_group :provisioning_template, :as => :create
 
       def create
-        @provisioning_template = ProvisioningTemplate.new(params[:provisioning_template])
+        @provisioning_template = ProvisioningTemplate.new(provisioning_template_params)
         process_response @provisioning_template.save
       end
 
@@ -59,7 +60,7 @@ module Api
       param_group :provisioning_template
 
       def update
-        process_response @provisioning_template.update_attributes(params[:provisioning_template])
+        process_response @provisioning_template.update_attributes(provisioning_template_params)
       end
 
       api :GET, "/provisioning_templates/revision"
@@ -109,6 +110,12 @@ module Api
         end
       end
 
+      api :GET, '/provisioning_templates/:id/export', N_('Export a provisioning template to ERB')
+      param :id, :identifier, :required => true
+      def export
+        send_data @provisioning_template.to_erb, :type => 'text/plain', :disposition => 'attachment', :filename => @provisioning_template.filename
+      end
+
       private
 
       def resource_class
@@ -128,6 +135,8 @@ module Api
         case params[:action]
           when 'clone'
             'create'
+          when 'export'
+            'view'
           else
             super
         end

@@ -11,7 +11,10 @@ module TaxonomyHelper
   end
 
   def show_taxonomy_tabs?
-    SETTINGS[:locations_enabled] or SETTINGS[:organizations_enabled]
+    Foreman::Deprecation.deprecation_warning(
+      '1.16', 'The partial "taxonomy/loc_org_tabs" checks already if '\
+      'taxonomies are enabled or not.')
+    SETTINGS[:locations_enabled] || SETTINGS[:organizations_enabled]
   end
 
   def organization_dropdown(count)
@@ -184,5 +187,9 @@ module TaxonomyHelper
                :hostgroups => { :all => _("All host groups"), :select => _("Select host groups") }
     }
     labels[resource][verb]
+  end
+
+  def org_loc_string(conjunction)
+    Taxonomy.enabled_taxonomies.map { |tax| _(tax) }.join(" #{conjunction} ")
   end
 end

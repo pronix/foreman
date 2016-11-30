@@ -3,11 +3,12 @@ module Api
     class DomainsController < V2::BaseController
       include Api::Version2
       include Api::TaxonomyScope
+      include Foreman::Controller::Parameters::Domain
 
       resource_description do
         desc <<-DOC
           Foreman considers a domain and a DNS zone as the same thing. That is, if you
-          are planning to manage a site where all the machines are or the form
+          are planning to manage a site where all the machines are of the form
           <i>hostname</i>.<b>somewhere.com</b> then the domain is <b>somewhere.com</b>.
           This allows Foreman to associate a puppet variable with a domain/site
           and automatically append this variable to all external node requests made
@@ -40,7 +41,9 @@ module Api
         param :domain, Hash, :required => true, :action_aware => true do
           param :name, String, :required => true, :desc => N_("The full DNS domain name")
           param :fullname, String, :required => false, :allow_nil => true, :desc => N_("Description of the domain")
-          param :dns_id, :number, :required => false, :allow_nil => true, :desc => N_("DNS proxy to use within this domain")
+          Domain.registered_smart_proxies.each do |name, options|
+            param :"#{name}_id", :number, :required => false, :allow_nil => true, :desc => options[:api_description]
+          end
           param :domain_parameters_attributes, Array, :required => false, :desc => N_("Array of parameters (name, value)")
           param_group :taxonomies, ::Api::V2::BaseController
         end
@@ -55,7 +58,7 @@ module Api
       param_group :domain, :as => :create
 
       def create
-        @domain = Domain.new(params[:domain])
+        @domain = Domain.new(domain_params)
         process_response @domain.save
       end
 
@@ -64,7 +67,7 @@ module Api
       param_group :domain
 
       def update
-        process_response @domain.update_attributes(params[:domain])
+        process_response @domain.update_attributes(domain_params)
       end
 
       api :DELETE, "/domains/:id/", N_("Delete a domain")

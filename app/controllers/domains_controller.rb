@@ -1,9 +1,10 @@
 class DomainsController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
+  include Foreman::Controller::Parameters::Domain
   before_action :find_resource, :only => [:edit, :update, :destroy]
 
   def index
-    @domains = resource_base.search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
+    @domains = resource_base_search_and_page
   end
 
   def new
@@ -11,7 +12,7 @@ class DomainsController < ApplicationController
   end
 
   def create
-    @domain = Domain.new(params[:domain])
+    @domain = Domain.new(domain_params)
     if @domain.save
       process_success
     else
@@ -23,7 +24,7 @@ class DomainsController < ApplicationController
   end
 
   def update
-    if @domain.update_attributes(params[:domain])
+    if @domain.update_attributes(domain_params)
       process_success
     else
       process_error

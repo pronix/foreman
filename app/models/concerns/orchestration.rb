@@ -99,11 +99,15 @@ module Orchestration
   end
 
   def skip_orchestration?
+    return true if skip_orchestration_for_testing?
+    !!@skip_orchestration
+  end
+
+  def skip_orchestration_for_testing?
     # The orchestration should be disabled in tests in order to avoid side effects.
     # If a test needs to enable orchestration, it should be done explicitly by stubbing
     # this method.
-    return true if Rails.env.test?
-    !!@skip_orchestration
+    Rails.env.test?
   end
 
   private
@@ -201,5 +205,9 @@ module Orchestration
 
   def update_cache
     Rails.cache.write(progress_report_id, (queue.all + post_queue.all).to_json, :expires_in => 5.minutes)
+  end
+
+  def attr_equivalent?(old, new)
+    (old.blank? && new.blank?) || (old == new)
   end
 end

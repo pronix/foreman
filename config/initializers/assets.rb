@@ -9,16 +9,14 @@ Foreman::Application.configure do |app|
 
   #  config.assets.precompile += %w()
   javascript = %w(compute_resource
+                  compute_resources/openstack/host_edit
                   compute_resources/libvirt/nic_info
                   compute_resources/ovirt/nic_info
                   compute_resources/vmware/nic_info
                   lookup_keys
-                  editor
-                  diff
                   host_edit
                   host_edit_interfaces
                   hosts
-                  jquery.cookie
                   host_checkbox
                   nfs_visibility
                   noVNC/base64
@@ -56,14 +54,14 @@ Foreman::Application.configure do |app|
 
   stylesheets = %w( unimported/email.css )
 
-  images = %w(editable/clear.png)
+  images = %w(editable/clear.png patternfly/bg-modal-about-pf.png )
 
   # Add the fonts path
   config.assets.paths << Rails.root.join('vendor', 'assets', 'fonts')
 
   # Precompile additional assets
   config.assets.precompile << /\.(?:svg|eot|woff|gif|ttf)$/
-  config.assets.precompile += javascript.map { |js| js + '.js' } + stylesheets + images + %w(background-size.htc)
+  config.assets.precompile += javascript.map { |js| js + '.js' } + stylesheets + images
 
   # Adds plugin assets to the application digests hash if a manifest file exists for a plugin
   config.after_initialize do

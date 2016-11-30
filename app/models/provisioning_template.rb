@@ -4,10 +4,7 @@ class ProvisioningTemplate < Template
   friendly_id :name
   include Parameterizable::ByIdName
 
-  audited :allow_mass_assignment => true
-
-  attr_accessible :template_combinations_attributes, :operatingsystems,
-    :operatingsystem_ids, :operatingsystem_names
+  audited
 
   validates :name, :uniqueness => true
   validates :template_kind_id, :presence => true, :unless => Proc.new {|t| t.snippet }
@@ -18,7 +15,7 @@ class ProvisioningTemplate < Template
   has_many :template_combinations, :dependent => :destroy
   belongs_to :template_kind
   accepts_nested_attributes_for :template_combinations, :allow_destroy => true,
-    :reject_if => ->(tc) { tc[:environment_id].blank? and tc[:hostgroup_id].blank? }
+    :reject_if => ->(tc) { tc[:environment_id].blank? && tc[:hostgroup_id].blank? }
   has_and_belongs_to_many :operatingsystems, :join_table => :operatingsystems_provisioning_templates, :association_foreign_key => :operatingsystem_id, :foreign_key => :provisioning_template_id
   has_many :os_default_templates
   before_save :check_for_snippet_assoications
@@ -35,6 +32,9 @@ class ProvisioningTemplate < Template
   scoped_search :in => :environments,     :on => :name, :rename => :environment,     :complete_value => true
   scoped_search :in => :hostgroups,       :on => :name, :rename => :hostgroup,       :complete_value => true
   scoped_search :in => :template_kind,    :on => :name, :rename => :kind,            :complete_value => true
+
+  attr_exportable :kind => Proc.new { |template| template.template_kind.try(:name) },
+                  :oses => Proc.new { |template| template.operatingsystems.map(&:name).uniq }
 
   # Override method in Taxonomix as Template is not used attached to a Host,
   # and matching a Host does not prevent removing a template from its taxonomy.
@@ -61,14 +61,6 @@ class ProvisioningTemplate < Template
     ids.uniq
   end
 
-  # we have to override the base_class because polymorphic associations does not detect it correctly, more details at
-  # http://apidock.com/rails/ActiveRecord/Associations/ClassMethods/has_many#1010-Polymorphic-has-many-within-inherited-class-gotcha
-  def self.base_class
-    self
-  end
-  # not sure why but this changes table_name so we set it explicitly
-  self.table_name = 'templates'
-
   def self.template_includes
     super + [:template_kind, :template_combinations => [:hostgroup, :environment]]
   end
@@ -80,7 +72,7 @@ class ProvisioningTemplate < Template
 
   def self.find_template(opts = {})
     raise ::Foreman::Exception.new(N_("Must provide template kind")) unless opts[:kind]
-    raise ::Foreman::Exception.new(N_("Must provide an operating systems")) unless opts[:operatingsystem_id]
+    raise ::Foreman::Exception.new(N_("Must provide an operating system")) unless opts[:operatingsystem_id]
 
     # first filter valid templates to our OS and requested template kind.
     templates = ProvisioningTemplate.joins(:operatingsystems, :template_kind).where('operatingsystems.id' => opts[:operatingsystem_id], 'template_kinds.name' => opts[:kind])
@@ -114,50 +106,52 @@ class ProvisioningTemplate < Template
   end
 
   def self.build_pxe_default(renderer)
-    if (proxies = SmartProxy.with_features("TFTP")).empty?
-      error_msg = _("No TFTP proxies defined, can't continue")
-    end
-
-    if (default_template = ProvisioningTemplate.find_by_name("PXELinux global default")).nil?
-      error_msg = _("Could not find a Configuration Template with the name \"PXELinux global default\", please create one.")
-    end
-
-    if error_msg.empty?
-      begin
-        @profiles = pxe_default_combos
-        allowed_helpers = Foreman::Renderer::ALLOWED_GENERIC_HELPERS + [ :default_template_url ]
-        menu = renderer.render_safe(default_template.template, allowed_helpers, :profiles => @profiles)
-      rescue => e
-        error_msg = _("failed to process template: %s" % e)
-      end
-    end
-
-    return [422, error_msg] unless error_msg.empty?
+    return [422, _("No TFTP proxies defined, can't continue")] if (proxies = SmartProxy.with_features("TFTP")).empty?
 
     error_msgs = []
-    proxies.each do |proxy|
-      begin
-        tftp = ProxyAPI::TFTP.new(:url => proxy.url)
-        tftp.create_default({:menu => menu})
+    TemplateKind::PXE.each do |kind|
+      default_template_name = "#{kind} global default"
+      if (default_template = ProvisioningTemplate.find_by_name(default_template_name)).nil?
+        error_msg = _("Could not find a Configuration Template with the name \"%s global default\", please create one.") % kind
+      else
+        begin
+          @profiles = pxe_default_combos
+          allowed_helpers = Foreman::Renderer::ALLOWED_GENERIC_HELPERS + [ :default_template_url ]
+          menu = renderer.render_safe(default_template.template, allowed_helpers, :profiles => @profiles)
+        rescue => exception
+          Foreman::Logging.exception("Cannot render '#{default_template_name}'", exception)
+          error_msgs << "#{exception.message} (#{kind})"
+        end
 
-        @profiles.each do |combo|
-          combo[:hostgroup].operatingsystem.pxe_files(combo[:hostgroup].medium, combo[:hostgroup].architecture).each do |bootfile_info|
-            for prefix, path in bootfile_info do
-              tftp.fetch_boot_file(:prefix => prefix.to_s, :path => path)
-            end
+        return [422, error_msg] unless error_msg.empty?
+        proxies.each do |proxy|
+          begin
+            tftp = ProxyAPI::TFTP.new(:url => proxy.url)
+            tftp.create_default(kind, {:menu => menu})
+            fetch_boot_files_combo(tftp)
+          rescue => exception
+            Foreman::Logging.exception("Cannot deploy rendered template '#{default_template_name}' to '#{proxy}'", exception)
+            error_msgs << "#{proxy}: #{exception.message} (#{kind})"
           end
         end
-      rescue => exc
-        error_msgs << "#{proxy}: #{exc.message}"
       end
     end
 
-    unless error_msgs.empty?
-      msg = _("There was an error creating the PXE Default file: %s") % error_msgs.join(",")
-      return [500, msg]
+    if error_msgs.empty?
+      [200, _("PXE Default file has been deployed to all Smart Proxies")]
+    else
+      [500, _("There was an error creating the PXE Default file: %s") % error_msgs.join(", ")]
     end
+  end
 
-    [200, _("PXE Default file has been deployed to all Smart Proxies")]
+  def self.fetch_boot_files_combo(tftp)
+    @profiles.each do |combo|
+      combo[:hostgroup].operatingsystem.pxe_files(combo[:hostgroup].medium, combo[:hostgroup].architecture).each do |bootfile_info|
+        for prefix, path in bootfile_info do
+          tftp.fetch_boot_file(:prefix => prefix.to_s, :path => path)
+        end
+      end
+    end
   end
 
   def preview_host_collection
@@ -172,11 +166,17 @@ class ProvisioningTemplate < Template
       template.template_combinations.each do |combination|
         hostgroup = combination.hostgroup
         if hostgroup && hostgroup.operatingsystem && hostgroup.architecture && hostgroup.medium
-          combos << {:hostgroup => hostgroup, :template => template}
+          combos << {
+            :hostgroup => hostgroup,
+            :template => template,
+            :kernel => hostgroup.operatingsystem.kernel(hostgroup.architecture),
+            :initrd => hostgroup.operatingsystem.initrd(hostgroup.architecture),
+            :pxe_type => hostgroup.operatingsystem.pxe_type
+          }
         end
       end
     end
-    combos.sort_by! { |profile| [profile[:hostgroup], profile[:template]] }
+    combos.sort_by! { |profile| [profile[:hostgroup].title, profile[:template]] }
   end
 
   private

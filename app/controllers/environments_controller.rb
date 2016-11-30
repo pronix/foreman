@@ -1,11 +1,12 @@
 class EnvironmentsController < ApplicationController
   include Foreman::Controller::Environments
   include Foreman::Controller::AutoCompleteSearch
+  include Foreman::Controller::Parameters::Environment
 
   before_action :find_resource, :only => [:edit, :update, :destroy]
 
   def index
-    @environments = resource_base.search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
+    @environments = resource_base_search_and_page
   end
 
   def new
@@ -13,7 +14,7 @@ class EnvironmentsController < ApplicationController
   end
 
   def create
-    @environment = Environment.new(params[:environment])
+    @environment = Environment.new(environment_params)
     if @environment.save
       process_success
     else
@@ -25,7 +26,7 @@ class EnvironmentsController < ApplicationController
   end
 
   def update
-    if @environment.update_attributes(params[:environment])
+    if @environment.update_attributes(environment_params)
       process_success
     else
       process_error

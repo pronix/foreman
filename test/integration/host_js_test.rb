@@ -3,6 +3,10 @@ require 'integration/shared/host_finders'
 require 'integration/shared/host_orchestration_stubs'
 
 class HostJSTest < IntegrationTestWithJavascript
+  # intermittent failures:
+  #   HostJSTest::edit page.test_0003_correctly override global params
+  extend Minitest::OptionalRetry
+
   include HostFinders
   include HostOrchestrationStubs
 
@@ -21,7 +25,7 @@ class HostJSTest < IntegrationTestWithJavascript
     test 'class parameters and overrides are displayed correctly for strings' do
       host = FactoryGirl.create(:host, :with_puppetclass)
       FactoryGirl.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override,
-                                      :key_type => 'string', :default_value => true,
+                                      :key_type => 'string', :default_value => true, :path => "fqdn",
                                       :puppetclass => host.puppetclasses.first, :overrides => {host.lookup_value_matcher => false})
       visit edit_host_path(host)
       assert page.has_link?('Parameters', :href => '#params')
@@ -52,7 +56,7 @@ class HostJSTest < IntegrationTestWithJavascript
     test 'can override puppetclass lookup values' do
       host = FactoryGirl.create(:host, :with_puppetclass)
       FactoryGirl.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override,
-                                      :key_type => 'string', :default_value => "true",
+                                      :key_type => 'string', :default_value => "true", :path => "fqdn",
                                       :puppetclass => host.puppetclasses.first, :overrides => {host.lookup_value_matcher => "false"})
 
       visit edit_host_path(host)
@@ -159,7 +163,7 @@ class HostJSTest < IntegrationTestWithJavascript
       click_button 'Edit'
       select2 domains(:unuseddomain).name, :from => 'host_interfaces_attributes_0_domain_id'
       wait_for_ajax
-      fill_in 'host_interfaces_attributes_0_mac', :with => '11:11:11:11:11:11'
+      fill_in 'host_interfaces_attributes_0_mac', :with => '00:11:11:11:11:11'
       wait_for_ajax
       fill_in 'host_interfaces_attributes_0_ip', :with => '1.1.1.1'
       click_button 'Ok' #close interfaces
@@ -202,7 +206,7 @@ class HostJSTest < IntegrationTestWithJavascript
       click_button 'Edit'
       select2 domains(:mydomain).name, :from => 'host_interfaces_attributes_0_domain_id'
       wait_for_ajax
-      fill_in 'host_interfaces_attributes_0_mac', :with => '11:11:11:11:11:11'
+      fill_in 'host_interfaces_attributes_0_mac', :with => '00:11:11:11:11:11'
       wait_for_ajax
       fill_in 'host_interfaces_attributes_0_ip', :with => '2.3.4.44'
       wait_for_ajax
@@ -218,6 +222,17 @@ class HostJSTest < IntegrationTestWithJavascript
 
       host = Host::Managed.search_for('name ~ "myhost1"').first
       assert_equal env2.name, host.environment.name
+    end
+
+    test 'setting host group updates parameters tab' do
+      hostgroup = FactoryGirl.create(:hostgroup, :with_parameter)
+      visit new_host_path
+      select2(hostgroup.name, :from => 'host_hostgroup_id')
+      wait_for_ajax
+
+      assert page.has_link?('Parameters', :href => '#params')
+      click_link 'Parameters'
+      assert page.has_selector?("#inherited_parameters #name_#{hostgroup.group_parameters.first.name}")
     end
   end
 
@@ -270,7 +285,8 @@ class HostJSTest < IntegrationTestWithJavascript
 
     test 'choosing a hostgroup does not override other host attributes' do
       original_hostgroup = FactoryGirl.
-        create(:hostgroup, :environment => FactoryGirl.create(:environment))
+        create(:hostgroup, :environment => FactoryGirl.create(:environment),
+                           :puppet_proxy => FactoryGirl.create(:puppet_smart_proxy))
 
       # Make host inherit hostgroup environment
       @host.attributes = @host.apply_inherited_attributes(
@@ -284,18 +300,23 @@ class HostJSTest < IntegrationTestWithJavascript
       select2(original_hostgroup.name, :from => 'host_hostgroup_id')
       wait_for_ajax
 
-      click_on_inherit('environment')
+      assert_equal original_hostgroup.puppet_proxy.name, find("#s2id_host_puppet_proxy_id .select2-chosen").text
+
+      click_on_inherit('puppet_proxy')
       select2(overridden_hostgroup.name, :from => 'host_hostgroup_id')
       wait_for_ajax
 
       environment = find("#s2id_host_environment_id .select2-chosen").text
       assert_equal original_hostgroup.environment.name, environment
+
+      # On host group change, the disabled select will be reset to an empty value
+      assert_equal '', find("#s2id_host_puppet_proxy_id .select2-chosen").text
     end
 
     test 'class parameters and overrides are displayed correctly for booleans' do
       host = FactoryGirl.create(:host, :with_puppetclass)
       lookup_key = FactoryGirl.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override,
-                                      :key_type => 'boolean', :default_value => 'false',
+                                      :key_type => 'boolean', :default_value => 'false', :path => "fqdn",
                                       :puppetclass => host.puppetclasses.first, :overrides => {host.lookup_value_matcher => 'false'})
       visit edit_host_path(host)
       assert page.has_link?('Parameters', :href => '#params')
@@ -310,6 +331,24 @@ class HostJSTest < IntegrationTestWithJavascript
       assert page.has_link?('Parameters', :href => '#params')
       click_link 'Parameters'
       assert_equal find("#s2id_host_lookup_values_attributes_#{lookup_key.id}_value .select2-chosen").text, "true"
+    end
+
+    test 'changing host group updates parameters tab' do
+      hostgroup1, hostgroup2 = FactoryGirl.create_pair(:hostgroup, :with_parameter)
+      host = FactoryGirl.create(:host, :hostgroup => hostgroup1)
+
+      visit edit_host_path(host)
+      assert page.has_link?('Parameters', :href => '#params')
+      click_link 'Parameters'
+      assert page.has_selector?("#inherited_parameters #name_#{hostgroup1.group_parameters.first.name}")
+
+      click_link 'Host'
+      select2(hostgroup2.name, :from => 'host_hostgroup_id')
+      wait_for_ajax
+
+      click_link 'Parameters'
+      assert page.has_no_selector?("#inherited_parameters #name_#{hostgroup1.group_parameters.first.name}")
+      assert page.has_selector?("#inherited_parameters #name_#{hostgroup2.group_parameters.first.name}")
     end
   end
 
@@ -427,7 +466,7 @@ class HostJSTest < IntegrationTestWithJavascript
 
         host = FactoryGirl.create(:host, :with_puppetclass)
 
-        lookup_key = FactoryGirl.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override, :path => 'domain',
+        lookup_key = FactoryGirl.create(:puppetclass_lookup_key, :as_smart_class_param, :with_override, :path => "fqdn\ndomain\ncomment",
                                         :puppetclass => host.puppetclasses.first, :default_value => 'default')
         LookupValue.create(:value => 'domain', :match => "domain=#{domain.name}", :lookup_key_id => lookup_key.id)
 
@@ -446,6 +485,15 @@ class HostJSTest < IntegrationTestWithJavascript
         assert page.has_link?('Parameters', :href => '#params')
         click_link 'Parameters'
         assert_equal "domain", class_params.find("textarea").value
+      end
+
+      test "selecting type updates interface fields" do
+        disable_orchestration
+        go_to_interfaces_tab
+
+        table.first(:button, 'Edit').click
+        select2 'Bond', :from => 'host_interfaces_attributes_0_type'
+        assert page.has_selector? 'input[name="host[interfaces_attributes][0][bond_options]"]'
       end
     end
 

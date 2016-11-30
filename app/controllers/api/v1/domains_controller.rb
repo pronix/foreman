@@ -1,11 +1,13 @@
 module Api
   module V1
     class DomainsController < V1::BaseController
+      include Foreman::Controller::Parameters::Domain
+
       resource_description do
         # TRANSLATORS: API documentation - do not translate
         desc <<-DOC
           Foreman considers a domain and a DNS zone as the same thing. That is, if you
-          are planning to manage a site where all the machines are or the form
+          are planning to manage a site where all the machines are of the form
           <i>hostname</i>.<b>somewhere.com</b> then the domain is <b>somewhere.com</b>.
           This allows Foreman to associate a puppet variable with a domain/site
           and automatically append this variable to all external node requests made
@@ -48,7 +50,7 @@ module Api
       end
 
       def create
-        @domain = Domain.new(params[:domain])
+        @domain = Domain.new(domain_params)
         process_response @domain.save
       end
 
@@ -62,7 +64,7 @@ module Api
       end
 
       def update
-        process_response @domain.update_attributes(params[:domain])
+        process_response @domain.update_attributes(domain_params)
       end
 
       api :DELETE, "/domains/:id/", "Delete a domain."

@@ -5,7 +5,7 @@
 
 <% Taxonomy.as_taxonomy @organization , @location do %>
 
-  <%= form_for @host,  :html => {:data => {:id => @host.try(:id), :type_changed => @host.type_changed?, :submit => 'progress_bar'}} do |f| %>
+  <%= form_for @host,  :html => {:data => {:id => @host.try(:id), :type_changed => !!@host.type_changed?, :submit => 'progress_bar'}} do |f| %>
     <%= base_errors_for @host %>
 
     <ul class="nav nav-tabs" data-tabs="tabs">
@@ -27,7 +27,8 @@
     <div class="tab-content">
 
       <div class="tab-pane active" id="primary">
-        <%= text_f f, :name, :size => "col-md-5", :value => name_field(@host),
+        <%= text_f f, :name, :size => "col-md-4", :value => name_field(@host),
+            :input_group_btn => randomize_mac_link,
             :help_inline => _("This value is used also as the host's primary interface name.") %>
 
         <% if show_organization_tab?  %>
@@ -72,7 +73,10 @@
 
         <%= host_puppet_environment_field f %>
 
-        <%= puppet_master_fields f, true, @host.hostgroup && @host.hostgroup_id_was.nil? %>
+        <%= smart_proxy_fields f,
+              :can_override => true,
+              :override => @host.hostgroup && @host.hostgroup_id_was.nil?
+        %>
 
         <%= realm_field f, true, @host.hostgroup && @host.hostgroup_id_was.nil? %>
 

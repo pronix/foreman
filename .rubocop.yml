@@ -7,10 +7,15 @@ AllCops:
     - 'app/views/api/**/*.rabl'
   Exclude:
     - 'db/schema.rb'
+    - 'node_modules/**/*'
     - 'vendor/**/*'
 
 Rails:
   Enabled: true
+
+# Don't prefer is_a? over kind_of?
+Style/ClassCheck:
+  Enabled: false
 
 # Don't enforce documentation
 Style/Documentation:
@@ -19,9 +24,10 @@ Style/Documentation:
 # Support both ruby19 and hash_rockets
 Style/HashSyntax:
   Enabled: false
-  SupportedStyles:
-    - ruby19
-    - hash_rockets
+
+# Don't enforce frozen string literals
+Style/FrozenStringLiteralComment:
+  Enabled: false
 
 Metrics/ClassLength:
   Exclude:
@@ -30,6 +36,3 @@ Metrics/ClassLength:
 Performance/FixedSize:
   Exclude:
     - 'test/**/*'
-
-Style/AndOr:
-  EnforcedStyle: conditionals

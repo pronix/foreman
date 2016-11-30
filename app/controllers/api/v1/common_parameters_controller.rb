@@ -1,6 +1,8 @@
 module Api
   module V1
     class CommonParametersController < V1::BaseController
+      include Foreman::Controller::Parameters::Parameter
+
       before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/common_parameters/", "List all common parameters."
@@ -11,7 +13,7 @@ module Api
 
       def index
         @common_parameters = CommonParameter.
-          authorized(:view_globals, CommonParameter).
+          authorized(:view_params, Parameter).where(:type => 'CommonParameter').
           search_for(*search_options).
           paginate(paginate_options)
       end
@@ -30,7 +32,7 @@ module Api
       end
 
       def create
-        @common_parameter = CommonParameter.new(params[:common_parameter])
+        @common_parameter = CommonParameter.new(parameter_params(::CommonParameter))
         process_response @common_parameter.save
       end
 
@@ -43,7 +45,7 @@ module Api
       end
 
       def update
-        process_response @common_parameter.update_attributes(params[:common_parameter])
+        process_response @common_parameter.update_attributes(parameter_params(::CommonParameter))
       end
 
       api :DELETE, "/common_parameters/:id/", "Delete a common_parameter"
@@ -51,6 +53,20 @@ module Api
 
       def destroy
         process_response @common_parameter.destroy
+      end
+
+      private
+
+      def controller_permission
+        'params'
+      end
+
+      def resource_scope(*args, &block)
+        super.where(:type => 'CommonParameter')
+      end
+
+      def resource_class
+        Parameter
       end
     end
   end

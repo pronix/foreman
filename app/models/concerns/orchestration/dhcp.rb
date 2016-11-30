@@ -71,10 +71,10 @@ module Orchestration::DHCP
 
   # where are we booting from
   def boot_server
-    # if we don't manage tftp at all, we dont create a next-server entry.
+    # if we don't manage tftp for IPv4 at all, we dont create a next-server entry.
     return unless tftp?
 
-    # first try to ask our TFTP server for its boot server
+    # first try to ask our IPv4 TFTP server for its boot server
     bs = tftp.bootServer
     # if that failed, trying to guess out tftp next server based on the smart proxy hostname
     bs ||= URI.parse(subnet.tftp.url).host
@@ -102,7 +102,9 @@ module Orchestration::DHCP
     }
 
     if provision?
-      dhcp_attr.merge!({:filename => operatingsystem.boot_filename(self), :nextServer => boot_server})
+      dhcp_attr.merge!(:nextServer => boot_server)
+      filename = operatingsystem.boot_filename(self.host)
+      dhcp_attr.merge!(:filename => filename) if filename.present?
       if jumpstart?
         jumpstart_arguments = os.jumpstart_params self.host, model.vendor_class
         dhcp_attr.merge! jumpstart_arguments unless jumpstart_arguments.empty?
@@ -137,7 +139,7 @@ module Orchestration::DHCP
   # do we need to update our dhcp reservations
   def dhcp_update_required?
     # IP Address / name changed, or 'rebuild' action is triggered and DHCP record on the smart proxy is not present/identical.
-    return true if ((old.ip != ip) || (old.hostname != hostname) || (old.mac != mac) || (old.subnet != subnet) ||
+    return true if ((old.ip != ip) || (old.hostname != hostname) || (old.mac != mac) || (old.subnet != subnet) || (operatingsystem.boot_filename(old.host) != operatingsystem.boot_filename(self.host)) ||
                     (!old.build? && build? && !dhcp_record.valid?))
     # Handle jumpstart
     #TODO, abstract this way once interfaces are fully used

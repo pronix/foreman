@@ -18,9 +18,7 @@
 class AuthSource < ActiveRecord::Base
   include Authorizable
 
-  attr_accessible :name, :onthefly_register
-
-  audited :allow_mass_assignment => true
+  audited
 
   validates_lengths_from_database :except => [:name, :account_password, :host, :attr_login, :attr_firstname, :attr_lastname, :attr_mail]
   before_destroy EnsureNotUsedBy.new(:users)
@@ -31,8 +29,6 @@ class AuthSource < ActiveRecord::Base
 
   scope :non_internal, -> { where("type NOT IN (?)", ['AuthSourceInternal', 'AuthSourceHidden']) }
   scope :except_hidden, -> { where('type <> ?', 'AuthSourceHidden') }
-
-  scoped_search :on => :name, :complete_value => :true
 
   def authenticate(login, password)
   end

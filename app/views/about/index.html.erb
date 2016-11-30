@@ -32,7 +32,7 @@
               <% @smart_proxies.each do |proxy| %>
                 <tr class="proxy-show"  data-url="<%= ping_smart_proxy_path(proxy) %>">
                   <td><%= link_to_if_authorized proxy.name, hash_for_smart_proxy_path(proxy) %></td>
-                  <td><%=h proxy.features.to_sentence %></td>
+                  <td><%=h proxy.features.map(&:name).to_sentence %></td>
                   <td><div class="proxy-show-status"><%= spinner %></div></td>
                   <td><div class="proxy-version"><%= spinner %></div></td>
                 </tr>
@@ -69,18 +69,18 @@
             <% if @compute_resources.empty? %>
               <p class="ca"><%= _("No compute resource to show") %></p>
             <% else %>
-              <table class="table table-striped">
+              <table class="table table-striped table-fixed">
                 <thead>
                   <tr>
-                    <th><%= _("Name") %></th>
-                    <th><%= _("Type") %></th>
-                    <th><%= _("Status") %></th>
+                    <th class="col-md-4"><%= _("Name") %></th>
+                    <th class="col-md-4"><%= _("Type") %></th>
+                    <th class="col-md-4"><%= _("Status") %></th>
                   </tr>
                 </thead>
                 <tbody>
                 <% @compute_resources.each do |compute| %>
                   <tr>
-                    <td><%= link_to compute.name, compute %></td>
+                    <td class="ellipsis"><%= link_to(compute.name, compute) %></td>
                     <td><%= compute.provider_friendly_name %></td>
                     <td><div class="compute-status" data-url=<%= ping_compute_resource_path(compute) %>><%= spinner %></div></td>
                   </tr>
@@ -140,7 +140,7 @@
     </div>
     <div class="stats-well" id="copyright-div">
       <h4><%= _("System Information") %> </h4>
-      <p id="copyright-p"><%= (_("Version %{version}  © 2009-%{year} Paul Kelly and %{author}") % {:version => SETTINGS[:version], :year=>DateTime.now.year, :author=>mail_to("ohadlevy@gmail.com", "Ohad Levy" )}).html_safe %></p>
+      <p id="copyright-p"><%= (_("Version %{version}  %{copyright} 2009-%{year} Paul Kelly and %{author}") % {:version => SETTINGS[:version], :copyright => "&copy;", :year=>DateTime.now.year, :author=>mail_to("ohadlevy@gmail.com", "Ohad Levy" )}).html_safe %></p>
     </div>
   </div>
 </div>

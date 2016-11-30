@@ -1,7 +1,9 @@
 class DashboardController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
-  before_action :prefetch_data, :only => :index
-  before_action :find_resource, :only => [:destroy]
+  include Foreman::Controller::Parameters::Widget
+
+  before_action :init_widget_data, :only => :show
+  before_action :find_resource, :only => [:show, :destroy]
   skip_before_action :welcome
 
   def index
@@ -12,9 +14,22 @@ class DashboardController < ApplicationController
     end
   end
 
+  def show
+    if @widget.present? && @widget.user == User.current
+      render(:partial => @widget.template, :locals => @widget.data)
+    else
+      render_403 "User #{User.current} attempted to access another user's widget"
+    end
+  rescue ActionView::MissingTemplate, ActionView::Template::Error => exception
+    process_ajax_error exception, "load widget"
+  end
+
   def create
     widget = Dashboard::Manager.find_default_widget_by_name(params[:name])
-    (not_found and return) unless widget.present?
+    unless widget.present?
+      not_found
+      return
+    end
     Dashboard::Manager.add_widget_to_user(User.current, widget.first)
     render :json => { :name => params[:name] }, :status => :ok
   end
@@ -39,8 +54,10 @@ class DashboardController < ApplicationController
 
   def save_positions
     errors = []
+    filter = self.class.widget_params_filter
     params[:widgets].each do |id, values|
       widget = User.current.widgets.where("id = #{id}").first
+      values = filter.filter_params(values, parameter_filter_context, :none)
       errors << widget.errors unless widget.update_attributes(values)
     end
     respond_to do |format|
@@ -56,11 +73,8 @@ class DashboardController < ApplicationController
 
   private
 
-  def prefetch_data
-    dashboard = Dashboard::Data.new(params[:search])
-    @hosts    = dashboard.hosts
-    @report   = dashboard.report
-    @latest_events = dashboard.latest_events
+  def init_widget_data
+    @data = Dashboard::Data.new(params[:search])
   end
 
   def resource_name

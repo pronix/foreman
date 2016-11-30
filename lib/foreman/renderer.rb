@@ -2,8 +2,17 @@ require 'tempfile'
 
 module Foreman
   module Renderer
+    # foreman_url macro uses url_for, therefore we need url helpers and fake default_url_options
+    # if it's not defined in class the we mix into
+    include Rails.application.routes.url_helpers
+
+    def default_url_options
+      {}
+    end
+
     ALLOWED_GENERIC_HELPERS ||= [ :foreman_url, :snippet, :snippets, :snippet_if_exists, :indent, :foreman_server_fqdn,
-                                  :foreman_server_url ]
+                                  :foreman_server_url, :log_debug, :log_info, :log_warn, :log_error, :log_fatal, :template_name, :dns_lookup,
+                                  :pxe_kernel_options ]
     ALLOWED_HOST_HELPERS ||= [ :grub_pass, :ks_console, :root_pass,
                                :media_path, :param_true?, :param_false?, :match ]
 
@@ -11,7 +20,11 @@ module Foreman
 
     ALLOWED_VARIABLES ||= [ :arch, :host, :osver, :mediapath, :mediaserver, :static,
                             :repos, :dynamic, :kernel, :initrd, :xen,
-                            :preseed_server, :preseed_path, :provisioning_type ]
+                            :preseed_server, :preseed_path, :provisioning_type, :template_name ]
+
+    def template_logger
+      @template_logger ||= Foreman::Logging.logger('templates')
+    end
 
     def render_safe(template, allowed_methods = [], allowed_vars = {})
       if Setting[:safemode_render]
@@ -41,7 +54,7 @@ module Foreman
             elsif proxy.present? && proxy.has_feature?('Templates')
               temp_url = ProxyAPI::Template.new(:url => proxy.url).template_url
               if temp_url.nil?
-                logger.warn("unable to obtain template url set by proxy #{proxy.url}. falling back on proxy url.")
+                template_logger.warn("unable to obtain template url set by proxy #{proxy.url}. falling back on proxy url.")
                 temp_url = proxy.url
               end
               temp_url
@@ -69,6 +82,26 @@ module Foreman
       Setting[:foreman_url]
     end
 
+    class_eval do
+      [:debug, :info, :warn, :error, :fatal].each do |level|
+        define_method("log_#{level}".to_sym) do |msg|
+          template_logger.send(level, msg) if msg.present?
+        end
+      end
+    end
+
+    def template_name
+      @template_name || 'Unnamed'
+    end
+
+    def pxe_kernel_options
+      return '' unless @host || @host.operatingsystem
+      @host.operatingsystem.pxe_kernel_options(@host.params).join(' ')
+    rescue => e
+      template_logger.warn "Unable to build PXE kernel options: #{e}"
+      ''
+    end
+
     # provide embedded snippets support as simple erb templates
     def snippets(file)
       if Template.where(:name => file, :snippet => true).empty?
@@ -80,7 +113,6 @@ module Foreman
 
     def snippet(name, options = {})
       if (template = Template.where(:name => name, :snippet => true).first)
-        logger.debug "rendering snippet #{template.name}"
         begin
           return unattended_render(template)
         rescue => exc
@@ -105,19 +137,28 @@ module Foreman
       prefix + text.gsub(/\n/, "\n#{prefix}")
     end
 
-    # accepts either template object or plain string
-    def unattended_render(template, template_name = nil)
-      template_name ||= template.respond_to?(:name) ? template.name : 'Unnamed'
-      raise ::Foreman::Exception.new(N_("Template '%s' is either missing or has an invalid organization or location"), template_name) if template.nil?
-      content = template.respond_to?(:template) ? template.template : template
-      allowed_variables = allowed_variables_mapping(ALLOWED_VARIABLES)
-      allowed_variables[:template_name] = template_name
-      render_safe content, ALLOWED_HELPERS, allowed_variables
+    def dns_lookup(name_or_ip)
+      resolver = Resolv::DNS.new
+      Timeout.timeout(Setting[:dns_conflict_timeout]) do
+        begin
+          resolver.getname(IPAddr.new(name_or_ip))
+        rescue IPAddr::Error
+          resolver.getaddress(name_or_ip)
+        end
+      end
+    rescue => e
+      log_warn "Template helper dns_lookup failed: #{e}"
+      raise e
     end
 
-    def pxe_render(template, template_name = nil)
-      ::Foreman::Deprecation.deprecation_warning("1.14", "method pxe_render will be removed, use unattended_render instead")
-      unattended_render(template, template_name)
+    # accepts either template object or plain string
+    def unattended_render(template, overridden_name = nil)
+      @template_name = template.respond_to?(:name) ? template.name : (overridden_name || 'Unnamed')
+      template_logger.info "Rendering template '#{@template_name}'"
+      raise ::Foreman::Exception.new(N_("Template '%s' is either missing or has an invalid organization or location"), @template_name) if template.nil?
+      content = template.respond_to?(:template) ? template.template : template
+      allowed_variables = allowed_variables_mapping(ALLOWED_VARIABLES)
+      render_safe content, ALLOWED_HELPERS, allowed_variables
     end
 
     def unattended_render_to_temp_file(content, prefix = id.to_s, options = {})

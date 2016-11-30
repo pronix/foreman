@@ -1,6 +1,8 @@
 module Api
   module V2
     class ModelsController < V2::BaseController
+      include Foreman::Controller::Parameters::Model
+
       before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/models/", N_("List all hardware models")
@@ -29,7 +31,7 @@ module Api
       param_group :model, :as => :create
 
       def create
-        @model = Model.new(params[:model])
+        @model = Model.new(model_params)
         process_response @model.save
       end
 
@@ -38,7 +40,7 @@ module Api
       param_group :model
 
       def update
-        process_response @model.update_attributes(params[:model])
+        process_response @model.update_attributes(model_params)
       end
 
       api :DELETE, "/models/:id/", N_("Delete a hardware model")
@@ -46,12 +48,6 @@ module Api
 
       def destroy
         process_response @model.destroy
-      end
-
-      private
-
-      def find_resource
-        @model = Model.friendly.find(params[:id]) || super
       end
     end
   end

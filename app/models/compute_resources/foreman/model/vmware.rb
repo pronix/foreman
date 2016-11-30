@@ -7,7 +7,6 @@ module Foreman::Model
 
     validates :user, :password, :server, :datacenter, :presence => true
     before_create :update_public_key
-    attr_accessible :pubkey_hash, :datacenter, :uuid, :server
 
     def self.available?
       Fog::Compute.providers.include?(:vsphere)
@@ -46,7 +45,7 @@ module Foreman::Model
     end
 
     def max_memory
-      16*Foreman::SIZE[:giga]
+      16.gigabytes
     end
 
     def datacenters
@@ -309,7 +308,7 @@ module Foreman::Model
       super
       if errors[:server].empty? && errors[:user].empty? && errors[:password].empty?
         update_public_key options
-        datacenters
+        errors.delete(:datacenter)
       end
     rescue => e
       errors[:base] << e.message

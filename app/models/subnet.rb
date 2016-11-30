@@ -13,20 +13,10 @@ class Subnet < ActiveRecord::Base
   include Taxonomix
   include Parameterizable::ByIdName
   include Exportable
-
-  attr_accessible :name, :type, :network, :mask, :gateway, :dns_primary, :dns_secondary, :ipam, :from,
-    :to, :vlanid, :boot_mode, :dhcp_id, :dhcp, :tftp_id, :tftp, :dns_id, :dns, :domain_ids, :domain_names,
-    :subnet_parameters_attributes, :cidr, :network_type
+  include BelongsToProxies
 
   attr_exportable :name, :network, :mask, :gateway, :dns_primary, :dns_secondary, :from, :to, :boot_mode,
     :ipam, :vlanid, :network_type
-
-  # This casts Subnet to Subnet::Ipv4 if no type is set
-  def self.new(*attributes, &block)
-    type = attributes.first.with_indifferent_access.delete(:type) if attributes.first.is_a?(Hash)
-    return Subnet::Ipv4.new_without_cast(*attributes, &block) if self == Subnet && type.nil?
-    super
-  end
 
   # This sets the rails model name of all child classes to the
   # model name of the parent class, i.e. Subnet.
@@ -43,14 +33,31 @@ class Subnet < ActiveRecord::Base
     super
   end
 
-  audited :allow_mass_assignment => true
+  audited
 
   validates_lengths_from_database :except => [:gateway]
   before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups, :interfaces, :domains)
+
+  belongs_to_proxy :dhcp,
+    :feature => 'DHCP',
+    :label => N_('DHCP Proxy'),
+    :description => N_('DHCP Proxy to use within this subnet'),
+    :api_description => N_('DHCP Proxy ID to use within this subnet'),
+    :if => ->(subnet) { subnet.supports_ipam_mode?(:dhcp) }
+
+  belongs_to_proxy :tftp,
+    :feature => N_('TFTP'),
+    :label => N_('TFTP Proxy'),
+    :api_description => N_('TFTP Proxy ID to use within this subnet'),
+    :description => N_('TFTP Proxy to use within this subnet')
+
+  belongs_to_proxy :dns,
+    :feature => N_('DNS'),
+    :label => N_('Reverse DNS Proxy'),
+    :api_description => N_('DNS Proxy ID to use within this subnet'),
+    :description => N_('DNS Proxy to use within this subnet for managing PTR records, note that A and AAAA records are managed via Domain DNS proxy')
+
   has_many :hostgroups
-  belongs_to :dhcp, :class_name => "SmartProxy"
-  belongs_to :tftp, :class_name => "SmartProxy"
-  belongs_to :dns,  :class_name => "SmartProxy"
   has_many :subnet_domains, :dependent => :destroy, :inverse_of => :subnet
   has_many :domains, :through => :subnet_domains
   has_many :subnet_parameters, :dependent => :destroy, :foreign_key => :reference_id, :inverse_of => :subnet
@@ -62,10 +69,6 @@ class Subnet < ActiveRecord::Base
   validates :ipam, :inclusion => {:in => Proc.new { |subnet| subnet.supported_ipam_modes.map {|m| IPAM::MODES[m]} }, :message => N_('not supported by this protocol')}
   validates :type, :inclusion => {:in => Proc.new { Subnet::SUBNET_TYPES.keys.map(&:to_s) }, :message => N_("must be one of [ %s ]" % Subnet::SUBNET_TYPES.keys.map(&:to_s).join(', ')) }
   validates :name, :length => {:maximum => 255}, :uniqueness => true
-
-  validates :dns, :proxy_features => { :feature => "DNS", :message => N_('does not have the DNS feature') }
-  validates :tftp, :proxy_features => { :feature => "TFTP", :message => N_('does not have the TFTP feature') }
-  validates :dhcp, :proxy_features => { :feature => "DHCP", :message => N_('does not have the DHCP feature') }
 
   before_validation :normalize_addresses
   validate :ensure_ip_addrs_valid
@@ -158,7 +161,7 @@ class Subnet < ActiveRecord::Base
   end
 
   def tftp?
-    !!(tftp and tftp.url and !tftp.url.blank?)
+    !!(tftp && tftp.url && !tftp.url.blank?)
   end
 
   def tftp_proxy(attrs = {})
@@ -167,7 +170,7 @@ class Subnet < ActiveRecord::Base
 
   # do we support DNS PTR records for this subnet
   def dns?
-    !!(dns and dns.url and !dns.url.blank?)
+    !!(dns && dns.url && !dns.url.blank?)
   end
 
   def dns_proxy(attrs = {})
@@ -273,6 +276,14 @@ class Subnet < ActiveRecord::Base
       ip = IPAddr.new(ip)
       Subnet.all.detect {|s| s.family == ip.family && s.contains?(ip)}
     end
+
+    # This casts Subnet to Subnet::Ipv4 if no type is set
+    def new_with_default_type(*attributes, &block)
+      type = attributes.first.with_indifferent_access.delete(:type) if attributes.first.is_a?(Hash)
+      return Subnet::Ipv4.new_without_cast(*attributes, &block) if self == Subnet && type.nil?
+      new_without_default_type(*attributes, &block)
+    end
+    alias_method_chain :new, :default_type
 
     # allows to create a specific subnet class based on the network_type.
     # network_type is more user friendly than the class names

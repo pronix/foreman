@@ -1,5 +1,4 @@
 //= require parameter_override
-//= require ipaddr
 
 $(document).on('ContentLoad', function(){onHostEditLoad()});
 $(document).on('AddedClass', function(event, link){load_puppet_class_parameters(link)});
@@ -57,18 +56,18 @@ function computeResourceSelected(item){
     var data = serializeForm().replace('method=patch', 'method=post');
     $('#compute_resource').html(spinner_placeholder(__('Loading virtual machine information ...')));
     $('#compute_resource_tab a').removeClass('tab-error');
-    foreman.tools.showSpinner();
+    tfm.tools.showSpinner();
     var url = $(item).attr('data-url');
     $.ajax({
       type:'post',
       url: url,
       data: data,
       complete: function(){
-        foreman.tools.hideSpinner();
+        tfm.tools.hideSpinner();
         handle_nic_updates();
       },
       error: function(jqXHR, status, error){
-        $('#compute_resource').html(Jed.sprintf(__("Error loading virtual machine information: %s"), error));
+        $('#compute_resource').html(jqXHR.responseText);
         $('#compute_resource_tab a').addClass('tab-error');
       },
       success: function(result){
@@ -76,6 +75,7 @@ function computeResourceSelected(item){
         activate_select2('#compute_resource');
         if ($('#compute_resource').find('.alert-danger').length > 0) $('#compute_resource_tab a').addClass('tab-error');
         update_capabilities($('#capabilities').val());
+        tfm.numFields.initAll();
       }
     })
   }
@@ -306,12 +306,12 @@ function update_form(element, options) {
   var url = $(element).data('url');
   var data = serializeForm().replace('method=patch', 'method=post');
   if (options.data) data = data+options.data;
-  foreman.tools.showSpinner();
+  tfm.tools.showSpinner();
   return $.ajax({
     type: 'post',
     url: url,
     data: data,
-    complete: function(){ foreman.tools.hideSpinner(); },
+    complete: function(){ tfm.tools.hideSpinner(); },
     success: function(response) {
       $('form').replaceWith(response);
       multiSelectOnLoad();
@@ -331,7 +331,7 @@ function update_form(element, options) {
 
 //Serializes only those input elements from form that are set explicitly
 function serializeForm() {
-  return $('form').serialize()
+  return $('form input,select,textarea').not('.form_template *').serialize()
 }
 
 function subnet_contains(network, cidr, ip) {
@@ -346,9 +346,11 @@ function subnet_contains(network, cidr, ip) {
 }
 
 function architecture_selected(element){
-  var attrs   = attribute_hash(['architecture_id', 'organization_id', 'location_id']);
   var url = $(element).attr('data-url');
-  foreman.tools.showSpinner();
+  var type = $(element).attr('data-type');
+  var attrs = {};
+  attrs[type] = attribute_hash(['architecture_id', 'organization_id', 'location_id']);
+  tfm.tools.showSpinner();
   $.ajax({
     data: attrs,
     type:'post',
@@ -363,9 +365,11 @@ function architecture_selected(element){
 }
 
 function os_selected(element){
-  var attrs = attribute_hash(['operatingsystem_id', 'organization_id', 'location_id']);
   var url = $(element).attr('data-url');
-  foreman.tools.showSpinner();
+  var type = $(element).attr('data-type');
+  var attrs = {};
+  attrs[type] = attribute_hash(['operatingsystem_id', 'organization_id', 'location_id']);
+  tfm.tools.showSpinner();
   $.ajax({
     data: attrs,
     type:'post',
@@ -416,10 +420,9 @@ function update_provisioning_image(){
 function medium_selected(element){
   var url = $(element).attr('data-url');
   var type = $(element).attr('data-type');
-  var obj = (type == "hosts" ? "host" : "hostgroup");
   var attrs = {};
-  attrs[obj] = attribute_hash(['medium_id', 'operatingsystem_id', 'architecture_id']);
-  attrs[obj]["use_image"] = $('*[id*=use_image]').attr('checked') == "checked";
+  attrs[type] = attribute_hash(['medium_id', 'operatingsystem_id', 'architecture_id']);
+  attrs[type]["use_image"] = $('*[id*=use_image]').attr('checked') == "checked";
   $.ajax({
     data: attrs,
     type:'post',
@@ -433,22 +436,21 @@ function medium_selected(element){
 function use_image_selected(element){
   var url = $(element).attr('data-url');
   var type = $(element).attr('data-type');
-  var obj = (type == "hosts" ? "host" : "hostgroup");
   var attrs = {};
-  attrs[obj] = attribute_hash(['medium_id', 'operatingsystem_id', 'architecture_id', 'model_id']);
-  attrs[obj]['use_image'] = ($(element).attr('checked') == "checked");
+  attrs[type] = attribute_hash(['medium_id', 'operatingsystem_id', 'architecture_id', 'model_id']);
+  attrs[type]['use_image'] = ($(element).attr('checked') == "checked");
   $.ajax({
     data: attrs,
     type: 'post',
     url:  url,
     success: function(response) {
       var field = $('*[id*=image_file]');
-      if (attrs[obj]["use_image"]) {
+      if (attrs[type]["use_image"]) {
         if (field.val() == "") field.val(response["image_file"]);
       } else
         field.val("");
 
-      field.attr("disabled", !attrs[obj]["use_image"]);
+      field.attr("disabled", !attrs[type]["use_image"]);
     }
   });
 }
@@ -456,7 +458,7 @@ function use_image_selected(element){
 function reload_host_params(){
   var host_id = $("form").data('id');
   var url = $('#params-tab').data('url');
-  var data = $("[data-submit='progress_bar']").serialize().replace('method=patch', 'method=post');
+  var data = serializeForm().replace('method=patch', 'method=post');
   if (url.length > 0) {
     data = data + '&host_id=' + host_id;
     load_with_placeholder('inherited_parameters', url, data);
@@ -466,7 +468,7 @@ function reload_host_params(){
 function reload_puppetclass_params(){
   var host_id = $("form").data('id');
   var url2 = $('#params-tab').data('url2');
-  var data = $("[data-submit='progress_bar']").serialize().replace('method=patch', 'method=post');
+  var data = serializeForm().replace('method=patch', 'method=post');
   if (url2.match('hostgroups')) {
     data = data + '&hostgroup_id=' + host_id
   } else {
@@ -628,7 +630,7 @@ function interface_domain_selected(element) {
   subnet_options.attr('disabled', true);
   subnet6_options.attr('disabled', true);
 
-  foreman.tools.showSpinner();
+  tfm.tools.showSpinner();
 
   var url = $(element).attr('data-url');
 
@@ -670,7 +672,7 @@ function interface_subnet_selected(element, ip_field) {
   toggle_suggest_new_link(element, ip_field);
 
   interface_ip.attr('disabled', true);
-  foreman.tools.showSpinner();
+  tfm.tools.showSpinner();
 
   // We do not query the proxy if the ip field is filled in and contains an
   // IP that is in the selected subnet
@@ -683,7 +685,7 @@ function interface_subnet_selected(element, ip_field) {
 
     if (subnet_contains(network, cidr, interface_ip.val())) {
       interface_ip.attr('disabled', false);
-      foreman.tools.hideSpinner();
+      tfm.tools.hideSpinner();
       return;
     }
   }
@@ -727,7 +729,7 @@ function interface_subnet_selected(element, ip_field) {
       setError(interface_ip, Jed.sprintf(__("Error generating IP: %s"), error));
     },
     complete: function () {
-      foreman.tools.hideSpinner();
+      tfm.tools.hideSpinner();
       interface_ip.attr('disabled', false);
     }
   });
@@ -760,6 +762,11 @@ function disable_vm_form_fields() {
   $("[id^=host_compute_attributes]").each(function () {
     $(this).attr("disabled", "disabled");
   });
+  $("[id^=host_interfaces_attributes]").filter(function() {
+    return this.id.match(/^host_interfaces_attributes_[0-9]+_compute_attributes_.*/);
+  }).each(function () {
+    $(this).attr("disabled", "disabled");
+  });
 }
 
 function selectedSubnetHasIPAM() {
@@ -769,3 +776,16 @@ function selectedSubnetHasIPAM() {
   if (subnet_id == '') return true;
   return subnets[subnet_id]['ipam'];
 };
+
+function randomizeName() {
+  $.ajax({
+    type: "GET",
+    url: "/hosts/random_name",
+    success: function(response, status, xhr) {
+      var element = $('#host_name');
+      element.val(response.name);
+      element.focus();
+      element.select();
+    }
+  });
+ }

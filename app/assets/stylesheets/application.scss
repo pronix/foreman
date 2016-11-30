@@ -3,14 +3,12 @@
 @import "jquery.ui.menu";
 //we need to import all the above because we are using jquery-ui-rails and it uses sprockets require instaed of sass import.
 @import "jquery.ui.autocomplete";
+@import "jquery.ui.spinner";
+@import "jquery.ui.spinner_custom";
 @import "../../../vendor/assets/stylesheets/vendor";
 @import "scoped_search";
-@import "multi-select";
-@import "select2";
-@import "select2-bootstrap";
 @import "patternfly-sprockets";
 @import "patternfly";
-@import "mixin";
 @import "editable/bootstrap-editable";
 @import "/*";
 
@@ -287,7 +285,7 @@ table {
   min-width: 720px;
   min-height: 400px;
   border: solid #222222 1px;
-  @include box-shadow(5px 5px 5px rgba(0, 0, 0, 0.2));
+  box-shadow: 5px 5px 5px rgba(0, 0, 0, 0.2);
   border-radius: 10px;
 }
 
@@ -301,6 +299,15 @@ table {
 .fact-col{
   white-space: normal;
   max-width: 500px;
+}
+
+.fact-origin{
+  width: 60px;
+  text-align: center;
+
+  img{
+    width: 14px;
+  }
 }
 
 .exit-fullscreen {
@@ -505,13 +512,7 @@ table {
 }
 
 .break-me {
-  white-space: -moz-pre-wrap; /* Mozilla */
-  white-space: -hp-pre-wrap; /* HP printers */
-  white-space: -o-pre-wrap; /* Opera 7 */
-  white-space: -pre-wrap; /* Opera 4-6 */
-  white-space: pre-wrap; /* CSS 2.1 */
-  white-space: pre-line; /* CSS 3 (and 2.1 as well, actually) */
-  word-wrap: break-word; /* IE */
+  white-space: pre-line;
   word-break: break-all;
 }
 
@@ -564,7 +565,6 @@ table {
 
 .pre-scrollable-xy-modal {
   overflow: auto;
-  -ms-word-wrap: normal;
   word-wrap: normal;
   overflow-wrap: normal;
   white-space: pre;
@@ -574,4 +574,37 @@ table {
 
 .masked-input {
   font-family: 'AllBullets';
+}
+
+.btn-spinner {
+  .spinner {
+    margin: 0.3em;
+  }
+  .caption {
+    float: right;
+  }
+}
+
+code.transparent {
+  padding: 0;
+  color: black;
+  background-color: transparent;
+}
+
+#parameters {
+  .table {
+    tr {
+      td {
+        border-top: none;
+      }
+      &.error-msg-block td {
+        .help-block {
+          margin-top: 0px;
+        }
+      }
+      &.fields td {
+        padding-top: 10px;
+      }
+    }
+  }
 }

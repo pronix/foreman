@@ -3,12 +3,10 @@ module Foreman::Model
     validates :user, :password, :region, :presence => true
     validate :ensure_valid_region
 
-    attr_accessible :region
-
     delegate :flavors, :to => :client
 
     def provided_attributes
-      super.merge({ :ip => :public_ip_address })
+      super.merge(:ip => :ipv4_address, :ip6 => :ipv6_address)
     end
 
     def self.available?
@@ -53,7 +51,7 @@ module Foreman::Model
     end
 
     def test_connection(options = {})
-      super and flavors
+      super && flavors
     rescue Excon::Errors::Unauthorized => e
       errors[:base] << e.response.body
     rescue Fog::Compute::Rackspace::Error, Excon::Errors::SocketError=> e

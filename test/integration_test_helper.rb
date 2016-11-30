@@ -8,6 +8,7 @@ require 'capybara/poltergeist'
 require 'show_me_the_cookies'
 require 'database_cleaner'
 require 'active_support_test_case_helper'
+require 'minitest-optional_retry'
 
 DatabaseCleaner.strategy = :transaction
 
@@ -112,6 +113,10 @@ class ActionDispatch::IntegrationTest
     set_request_user(:admin)
   end
 
+  def logout_admin
+    delete_cookie('test_user')
+  end
+
   def set_request_user(user)
     user = users(user) unless user.is_a?(User)
     create_cookie('test_user', user.login)
@@ -120,7 +125,7 @@ end
 
 class IntegrationTestWithJavascript < ActionDispatch::IntegrationTest
   def login_admin
-    DatabaseCleaner.strategy = :truncation
+    DatabaseCleaner.strategy = :truncation, { :except => ['dynflow_schema_info'] }
     DatabaseCleaner.start
     Capybara.current_driver = Capybara.javascript_driver
     super

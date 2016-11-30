@@ -39,7 +39,10 @@ Foreman::Application.routes.draw do
       resources :provisioning_templates, :except => [:new, :edit] do
         (resources :locations, :only => [:index, :show]) if SETTINGS[:locations_enabled]
         (resources :organizations, :only => [:index, :show]) if SETTINGS[:organizations_enabled]
-        post :clone, :on => :member
+        member do
+          post :clone
+          get :export
+        end
         collection do
           post 'build_pxe_default'
           get 'revision'
@@ -146,7 +149,10 @@ Foreman::Application.routes.draw do
       resources :ptables, :except => [:new, :edit] do
         (resources :locations, :only => [:index, :show]) if SETTINGS[:locations_enabled]
         (resources :organizations, :only => [:index, :show]) if SETTINGS[:organizations_enabled]
-        post :clone, :on => :member
+        member do
+          post :clone
+          get :export
+        end
         collection do
           get 'revision'
         end
@@ -307,6 +313,7 @@ Foreman::Application.routes.draw do
           resources :autosign, :only => [:index]
         end
         resources :hosts, :except => [:new, :edit] do
+          get :enc, :on => :member
           get :status, :on => :member
           get 'status/:type', :on => :member, :action => :get_status
           get :vm_compute_attributes, :on => :member

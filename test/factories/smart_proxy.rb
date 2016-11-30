@@ -2,8 +2,16 @@ FactoryGirl.define do
   factory :smart_proxy do
     sequence(:name) {|n| "proxy#{n}" }
     sequence(:url) {|n| "https://somewhere#{n}.net:8443" }
+    before(:create, :build, :build_stubbed) do
+      ProxyAPI::Features.any_instance.stubs(:features => Feature.name_map.keys)
+    end
+
     factory :template_smart_proxy do
       features { |sp| [sp.association(:template_feature), sp.association(:tftp_feature) ] }
+    end
+
+    factory :bmc_smart_proxy do
+      features { |sp| [sp.association(:feature, :bmc)] }
     end
 
     factory :dhcp_smart_proxy do
@@ -15,6 +23,9 @@ FactoryGirl.define do
     end
 
     factory :puppet_smart_proxy do
+      before(:create, :build, :build_stubbed) do
+        ProxyAPI::Features.any_instance.stubs(:features => ['puppet'])
+      end
       features { |sp| [sp.association(:feature, :puppet)] }
     end
 

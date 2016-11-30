@@ -1,4 +1,3 @@
-@import "mixin";
 @import "colors";
 
 $navbar-default-bg: $primary_color;
@@ -121,6 +120,11 @@ a {
   }
 }
 
+.header-logo{
+  width: 44px;
+  height: 34px;
+}
+
 .tab-content{
   min-height: 420px;
 }
@@ -172,7 +176,7 @@ a {
   padding: 19px;
   min-height: 460px;
   border: 1px solid $primary_gradient_start;
-  @include box-shadow(-2px 0 5px 0px rgba(0, 0, 0, 0.2));
+  box-shadow: -2px 0 5px 0px rgba(0, 0, 0, 0.2);
 }
 .nav.nav-pills.nav-stacked .btn.btn-success:hover{
   background-color: #47a447;
@@ -216,7 +220,6 @@ body.modal-open {
 .input-addon {
   color: black;
 }
-// eof form-control-feedback
 
 legend {
   margin-bottom: 10px;

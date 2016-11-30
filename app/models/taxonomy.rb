@@ -6,22 +6,6 @@ class Taxonomy < ActiveRecord::Base
 
   serialize :ignore_types, Array
 
-  attr_accessible :name, :title, :description, :ignore_types,
-    :config_template_ids, :config_template_names,
-    :compute_resource_ids, :compute_resource_names,
-    :domain_ids, :domain_names,
-    :environment_ids, :environment_names,
-    :hostgroup_ids, :hostgroup_names,
-    :location_ids, :location_names,
-    :medium_ids, :medium_names,
-    :organization_ids, :organization_names,
-    :provisioning_template_ids, :provisioning_template_names,
-    :ptable_ids, :ptable_names,
-    :realm_ids, :realm_names,
-    :smart_proxy_ids, :smart_proxy_names,
-    :subnet_ids, :subnet_names,
-    :user_ids, :users, :user_names
-
   belongs_to :user
   after_create :assign_taxonomy_to_user
 
@@ -30,8 +14,8 @@ class Taxonomy < ActiveRecord::Base
   has_many :smart_proxies, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'SmartProxy'
   has_many :compute_resources, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'ComputeResource'
   has_many :media, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Medium'
-  has_many :provisioning_templates, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'ProvisioningTemplate'
-  has_many :ptables, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Ptable'
+  has_many :provisioning_templates, -> { where(:type => 'ProvisioningTemplate') }, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Template'
+  has_many :ptables, -> { where(:type => 'Ptable') }, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Template'
   has_many :domains, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Domain'
   has_many :realms, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Realm'
   has_many :hostgroups, :through => :taxable_taxonomies, :source => :taxable, :source_type => 'Hostgroup'
@@ -41,13 +25,18 @@ class Taxonomy < ActiveRecord::Base
   validate :check_for_orphans, :unless => Proc.new {|t| t.new_record?}
 
   validates :name, :presence => true, :uniqueness => {:scope => [:ancestry, :type], :case_sensitive => false}
-  validates :title, :presence => true, :uniqueness => {:scope => :type}
 
   before_validation :sanitize_ignored_types
   after_create :assign_default_templates
 
-  scoped_search :on => :description, :complete_enabled => :false, :only_explicit => true
-  scoped_search :on => :id
+  def self.inherited(child)
+    child.instance_eval do
+      scoped_search :on => :description, :complete_enabled => :false, :only_explicit => true
+      scoped_search :on => :id
+    end
+    child.send(:include, NestedAncestryCommon::Search)
+    super
+  end
 
   delegate :import_missing_ids, :inherited_ids, :used_and_selected_or_inherited_ids, :selected_or_inherited_ids,
            :non_inherited_ids, :used_or_inherited_ids, :used_ids, :to => :tax_host
@@ -162,7 +151,7 @@ class Taxonomy < ActiveRecord::Base
     #  if ignore?("Domain")
     #   Domain.pluck(:id)
     # else
-    #   self.taxable_taxonomies.where(:taxable_type => "Domain").pluck(:taxable_id)
+    #   super()  # self.domain_ids
     # end
     define_method(key) do
       klass = hash_key_to_class(key)
@@ -170,7 +159,7 @@ class Taxonomy < ActiveRecord::Base
         return User.unscoped.except_admin.except_hidden.map(&:id) if klass == "User"
         return klass.constantize.pluck(:id)
       else
-        taxable_taxonomies.where(:taxable_type => klass).pluck(:taxable_id)
+        super()
       end
     end
   end

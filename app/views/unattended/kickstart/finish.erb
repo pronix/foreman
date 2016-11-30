@@ -5,6 +5,14 @@ oses:
 - CentOS
 - Fedora
 %>
+  <%#
+  This template accepts the following parameters:
+  - bootloader-append: string (default="nofb quiet splash=quiet")
+  - force-puppet: boolean (default=false)
+  - ntp-server: string (default="0.fedora.pool.ntp.org")
+  - package_upgrade: boolean (default=true)
+  - salt_master: string (default=undef)
+  %>
 <% if @host.subnet.respond_to?(:dhcp_boot_mode?) -%>
 <%= snippet 'kickstart_networking_setup' %>
 service network restart
@@ -28,23 +36,6 @@ echo 'root:<%= root_pass -%>' | /usr/sbin/chpasswd -e
 <%= snippet 'epel' -%>
 <% end -%>
 
-<% if puppet_enabled -%>
-<% if @host.param_true?('enable-puppetlabs-repo') -%>
-<% if @host.operatingsystem.name == 'Fedora' -%>
-rpm -ivh http://yum.puppetlabs.com/puppetlabs-release-fedora-<%= os_major -%>.noarch.rpm
-<% else -%>
-rpm -ivh http://yum.puppetlabs.com/puppetlabs-release-el-<%= os_major -%>.noarch.rpm
-<% end -%>
-<% end -%>
-<% if @host.param_true?('enable-puppetlabs-pc1-repo') -%>
-<% if @host.operatingsystem.name == 'Fedora' -%>
-rpm -ivh http://yum.puppetlabs.com/puppetlabs-release-pc1-fedora-<%= os_major -%>.noarch.rpm
-<% else -%>
-rpm -ivh http://yum.puppetlabs.com/puppetlabs-release-pc1-el-<%= os_major -%>.noarch.rpm
-<% end -%>
-<% end -%>
-<% end -%>
-
 #update local time
 echo "updating system time"
 /usr/sbin/ntpdate -sub <%= @host.params['ntp-server'] || '0.fedora.pool.ntp.org' %>
@@ -54,8 +45,14 @@ echo "updating system time"
 <%= snippet 'freeipa_register' %>
 <% end -%>
 
+<% unless @host.param_false?('package_upgrade') -%>
 # update all the base packages from the updates repository
-yum -t -y update
+if [ -f /usr/bin/dnf ]; then
+  dnf -y update
+else
+  yum -t -y update
+fi
+<% end -%>
 
 <%= snippet('remote_execution_ssh_keys') %>
 
@@ -64,6 +61,7 @@ yum -t -y update
 <% end -%>
 
 <% if puppet_enabled %>
+<%= snippet 'puppetlabs_repo' %>
 <%= snippet 'puppet_setup' %>
 <% end -%>
 

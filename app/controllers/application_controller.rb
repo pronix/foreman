@@ -2,7 +2,6 @@ class ApplicationController < ActionController::Base
   include ApplicationShared
 
   force_ssl :if => :require_ssl?
-  ensure_security_headers
   protect_from_forgery # See ActionController::RequestForgeryProtection for details
   rescue_from ScopedSearch::QueryNotSupported, :with => :invalid_search_query
   rescue_from Exception, :with => :generic_exception if Rails.env.production?
@@ -20,6 +19,7 @@ class ApplicationController < ActionController::Base
   before_action :set_taxonomy, :require_mail, :check_empty_taxonomy
   before_action :authorize
   before_action :welcome, :only => :index, :unless => :api_request?
+  prepend_before_action :allow_webpack, if: -> { Rails.configuration.webpack.dev_server.enabled }
   around_action :set_timezone
   layout :display_layout?
 
@@ -28,10 +28,9 @@ class ApplicationController < ActionController::Base
   cache_sweeper :topbar_sweeper
 
   def welcome
-    klass = controller_name.camelize.singularize
-    if (klass.constantize.first.nil? rescue false)
+    if (model_of_controller.first.nil? rescue false)
       @welcome = true
-      render :welcome rescue nil and return
+      render :welcome rescue nil
     end
   rescue
     not_found
@@ -50,7 +49,10 @@ class ApplicationController < ActionController::Base
 
   # Authorize the user for the requested action
   def authorize
-    (render :json => { :error => "Authentication error" }, :status => :unauthorized and return) unless User.current.present?
+    unless User.current.present?
+      render :json => { :error => "Authentication error" }, :status => :unauthorized
+      return
+    end
     authorized ? true : deny_access
   end
 
@@ -127,10 +129,6 @@ class ApplicationController < ActionController::Base
     @model_of_controller ||= controller_path.singularize.camelize.gsub('/','::').constantize
   end
 
-  def current_permission
-    [action_permission, controller_permission].join('_')
-  end
-
   def controller_permission
     controller_name
   end
@@ -150,7 +148,7 @@ class ApplicationController < ActionController::Base
     end
   end
 
-  # not all models includes Authorizable so we detect whether we should apply authorized scope or not
+  # Not all models include Authorizable so we detect whether we should apply authorized scope or not
   def resource_base
     @resource_base ||= if model_of_controller.respond_to?(:authorized)
                          model_of_controller.authorized(current_permission)
@@ -217,6 +215,15 @@ class ApplicationController < ActionController::Base
     "application"
   end
 
+  def resource_base_with_search
+    resource_base.search_for(params[:search], :order => params[:order])
+  end
+
+  def resource_base_search_and_page(tables = [])
+    base = tables.empty? ? resource_base_with_search : resource_base_with_search.eager_load(*tables)
+    base.paginate(:page => params[:page], :per_page => params[:per_page])
+  end
+
   private
 
   def require_admin
@@ -266,7 +273,7 @@ class ApplicationController < ActionController::Base
     hash[:success_redirect] ||= saved_redirect_url_or(send("#{controller_name}_url"))
 
     notice hash[:success_msg]
-    redirect_to hash[:success_redirect] and return
+    redirect_to hash[:success_redirect]
   end
 
   def process_error(hash = {})
@@ -389,5 +396,27 @@ class ApplicationController < ActionController::Base
   # On Rails 4 we can get rid of this and use the strategy ':exception'.
   def handle_unverified_request
     raise ::Foreman::Exception.new(N_("Invalid authenticity token"))
+  end
+
+  def parameter_filter_context
+    Foreman::ParameterFilter::Context.new(:ui, controller_name, params[:action])
+  end
+
+  def allow_webpack
+    webpack_csp = { script_src: [webpack_server], connect_src: [webpack_server],
+                    style_src: [webpack_server], img_src: [webpack_server] }
+
+    append_content_security_policy_directives(webpack_csp)
+  end
+
+  def webpack_server
+    port = Rails.configuration.webpack.dev_server.port
+    @dev_server ||= "#{request.protocol}#{request.host}:#{port}"
+  end
+
+  class << self
+    def parameter_filter_context
+      Foreman::ParameterFilter::Context.new(:ui, controller_name, nil)
+    end
   end
 end

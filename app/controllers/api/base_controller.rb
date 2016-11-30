@@ -32,10 +32,15 @@ module Api
       not_found
     end
 
+    rescue_from Foreman::AssociationNotFound do |error|
+      logger.info "#{error.message} (#{error.class})"
+      not_found error.message
+    end
+
     rescue_from Foreman::MaintenanceException, :with => :service_unavailable
 
     def get_resource
-      instance_variable_get :"@#{resource_name}" or raise 'no resource loaded'
+      instance_variable_get(:"@#{resource_name}") || raise('no resource loaded')
     end
 
     def controller_permission
@@ -56,7 +61,22 @@ module Api
       association = resource_class.reflect_on_all_associations.find {|assoc| assoc.plural_name == parent_name.pluralize}
       #if couldn't find an association by name, try to find one by class
       association ||= resource_class.reflect_on_all_associations.find {|assoc| assoc.class_name == parent_name.camelize}
-      resource_class.joins(association.name).merge(scope)
+      result_scope = resource_class.joins(association.name).merge(scope)
+      # Check that the scope resolves before return
+      result_scope if result_scope.to_a
+    rescue ActiveRecord::ConfigurationError
+      # Chaining SQL with a parent scope does not always work, as the
+      # parent scope might have attributes the resource_class does not have.
+      #
+      # For example, chaining 'interfaces' with a parent scope (hosts) that
+      # contains an authorization filter (hostgroup = foo), will not work
+      # as the resulting SQL has attributes (hostgroup) the
+      # resource_class does not have.
+      #
+      # In such cases, we resolve the scope first, and then call 'where'
+      # on the results
+      resource_class.joins(association.name).
+        where(association.name => scope.map(&:id))
     end
 
     def resource_scope_for_index(options = {})
@@ -82,10 +102,13 @@ module Api
       when Hash
         not_found_message.merge! options
       else
-        render_error 'not_found', :status => :not_found and return false
+        render_error 'not_found', :status => :not_found
+        return false
       end
 
-      render :json => not_found_message, :status => :not_found and return false
+      render :json => not_found_message, :status => :not_found
+
+      false
     end
 
     def service_unavailable(exception = nil)
@@ -106,8 +129,8 @@ module Api
       end
     end
 
-    def process_success(response = nil)
-      render_status = request.post? ? :created : :ok
+    def process_success(response = nil, render_status = nil)
+      render_status ||= request.post? ? :created : :ok
       response ||= get_resource
       respond_with response, :responder => ApiResponder, :status => render_status
     end
@@ -298,7 +321,7 @@ module Api
         parent_class
       end
 
-      return nil if parent_name.nil?
+      return nil if parent_name.nil? || parent_class.nil?
       parent_scope = scope_for(parent_class, :permission => "#{parent_permission(action_permission)}_#{parent_name.pluralize}")
       parent_scope = select_by_resource_id_scope(parent_scope, parent_class, parent_id)
       [parent_name, parent_scope]
@@ -349,6 +372,16 @@ module Api
 
     def protect_api_from_forgery?
       session[:user].present?
+    end
+
+    def parameter_filter_context
+      Foreman::ParameterFilter::Context.new(:api, controller_name, params[:action])
+    end
+
+    class << self
+      def parameter_filter_context
+        Foreman::ParameterFilter::Context.new(:api, controller_name, nil)
+      end
     end
   end
 end

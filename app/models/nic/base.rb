@@ -9,11 +9,6 @@ module Nic
     self.table_name = 'nics'
 
     validates_lengths_from_database
-    attr_accessible :attached_to, :attached_devices, :bond_options,
-      :compute_attributes, :host_id, :host, :identifier, :ip, :ip6, :link, :mac,
-      :managed, :mode, :name, :password, :primary, :provider, :provision, :type,
-      :tag, :username, :virtual,
-      :_destroy # used for nested_attributes
 
     before_validation :normalize_mac
     after_validation :set_validated
@@ -23,6 +18,8 @@ module Nic
              :if => Proc.new { |nic| nic.managed? && nic.host && nic.host.managed? && !nic.host.compute? && !nic.virtual? && nic.mac.present? }
     validates :mac, :presence => true,
               :if => Proc.new { |nic| nic.managed? && nic.host_managed? && !nic.host.compute? && !nic.virtual? }
+    validate :validate_mac_is_unicast,
+              :if => Proc.new { |nic| nic.managed? && !nic.virtual? }
     validates :mac, :mac_address => true, :allow_blank => true
 
     validates :host, :presence => true, :if => Proc.new { |nic| nic.require_host? }
@@ -93,7 +90,7 @@ module Nic
       allowed_types.find { |nic_class| nic_class.humanized_name.downcase == name.to_s.downcase }
     end
 
-    # NIC types have to be registered to to expose them to users
+    # NIC types have to be registered to expose them to users
     def self.register_type(type)
       allowed_types << type
     end
@@ -145,36 +142,47 @@ module Nic
       self.host && self.host.managed? && SETTINGS[:unattended]
     end
 
-    def require_ip_validation?(ip_field, other_ip_field, subnet_object)
-      raise ::Foreman::Exception.new("invalid ip field: %s", ip_field) unless ip_field == :ip || ip_field == :ip6
-      raise ::Foreman::Exception.new("invalid other ip field: %s", other_ip_field) unless other_ip_field == :ip || other_ip_field == :ip6
-
-      # if it's not managed there's nowhere to specify an IP anyway
-      return false unless self.host.managed? && self.managed? && self.provision?
-
-      # if the CR will provide an IP, then don't validate yet
-      return false if host.compute_provides?(ip_field)
-
-      ip_for_dns   = (subnet_object.present? && subnet_object.dns_id.present?) || (domain.present? && domain.dns_id.present? && !self.send(other_ip_field).present?)
-      ip_for_dhcp  = subnet_object.present? && subnet_object.dhcp_id.present?
-      ip_for_token = Setting[:token_duration] == 0 && (host.pxe_build? || (host.image_build? && host.image.try(:user_data?))) && !self.send(other_ip_field).present?
-
-      # Any of these conditions will require an IP, so chain with OR
-      ip_for_dns || ip_for_dhcp || ip_for_token
+    def require_ip4_validation?(from_compute = true)
+      NicIpRequired::Ipv4.new(:nic => self, :from_compute => from_compute).required?
     end
 
-    def require_ip4_validation?
-      require_ip_validation?(:ip, :ip6, subnet)
+    def require_ip6_validation?(from_compute = true)
+      NicIpRequired::Ipv6.new(:nic => self, :from_compute => from_compute).required?
     end
 
-    def require_ip6_validation?
-      require_ip_validation?(:ip6, :ip, subnet6)
+    def required_ip_addresses_set?(from_compute = true)
+      errors.add(:ip, :blank) if ip.blank? && require_ip4_validation?(from_compute)
+      errors.add(:ip6, :blank) if ip6.blank? && require_ip6_validation?(from_compute)
+      !errors.include?(:ip) && !errors.include?(:ip6)
+    end
+
+    def compute_provides_ip?(field)
+      return false unless managed? && host_managed? && primary?
+      subnet_field = field == :ip6 ? :subnet6 : :subnet
+      host.compute_provides?(field) || host.compute_provides?(:mac) && mac_based_ipam?(subnet_field)
+    end
+
+    def mac_based_ipam?(subnet_field)
+      send(subnet_field).present? && send(subnet_field).ipam == IPAM::MODES[:eui64]
+    end
+
+    # Overwrite setter for ip to force normalization
+    # even when address is set during a callback
+    def ip=(addr)
+      super(Net::Validations.normalize_ip(addr))
+    end
+
+    # Overwrite setter for ip6 to force normalization
+    # even when address is set during a callback
+    def ip6=(addr)
+      super(Net::Validations.normalize_ip6(addr))
     end
 
     protected
 
     def normalize_mac
       self.mac = Net::Validations.normalize_mac(mac)
+      true
     rescue Net::Validations::Error => e
       self.errors.add(:mac, e.message)
     end
@@ -232,6 +240,10 @@ module Nic
 
     def mac_uniqueness
       interface_attribute_uniqueness(:mac, Nic::Base.physical.is_managed)
+    end
+
+    def validate_mac_is_unicast
+      errors.add(:mac, _('must be a unicast MAC address')) if Net::Validations.multicast_mac?(mac) || Net::Validations.broadcast_mac?(mac)
     end
 
     private

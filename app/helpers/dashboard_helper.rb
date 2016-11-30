@@ -35,12 +35,6 @@ module DashboardHelper
     end
   end
 
-  def render_widget(widget)
-    render(:partial => widget.template, :locals => widget.data)
-  rescue ActionView::MissingTemplate
-    ::Foreman::Exception.new(N_("Missing template '%{template}' for widget '%{widget}'."), :widget => _(widget.name), :template => widget.template)
-  end
-
   def widget_data(widget)
     { :data => { :id    => widget.id,    :name  => _(widget.name), :row  => widget.row, :col => widget.col,
                  :sizex => widget.sizex, :sizey =>  widget.sizey,  :hide => widget.hide } }
@@ -79,7 +73,7 @@ module DashboardHelper
       content_tag(:span, raw('&nbsp;'), :class=>'label', :style => "background-color:" + report_color[counter]) +
       raw('&nbsp;')+
       link_to(name, hosts_path(:search => search),:class=>"dashboard-links") +
-      content_tag(:h4,@report[counter])
+      content_tag(:h4, @data.report[counter])
     end
   end
 

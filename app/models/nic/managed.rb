@@ -22,9 +22,10 @@ module Nic
              :operatingsystem, :provisioning_template, :jumpstart?, :build, :build?, :os, :arch,
              :image_build?, :pxe_build?, :pxe_build?, :token, :to_ip_address, :model, :to => :host
     delegate :operatingsystem_id, :hostgroup_id, :environment_id,
-             :overwrite?, :skip_orchestration!, :to => :host, :allow_nil => true
+             :overwrite?, :skip_orchestration?, :skip_orchestration!, :to => :host, :allow_nil => true
 
-    attr_exportable :ip, :mac, :name, :attrs, :virtual, :link, :identifier, :managed, :primary, :provision, :subnet, :subnet6,
+    attr_exportable :ip, :ip6, :mac, :name, :attrs, :virtual, :link, :identifier, :managed,
+      :primary, :provision, :subnet, :subnet6,
       :tag => ->(nic) { nic.tag if nic.virtual? },
       :attached_to => ->(nic) { nic.attached_to if nic.virtual? },
       :type => ->(nic) { nic.type.constantize.humanized_name }
@@ -54,17 +55,16 @@ module Nic
       N_('Interface')
     end
 
-    # Copied from compute orchestration
     def ip_available?
-      ip.present? || (host.present? && host.compute_provides?(:ip)) # TODO revist this for VMs
+      ip.present? || compute_provides_ip?(:ip)
     end
 
     def ip6_available?
-      ip6.present? || (host.present? && host.compute_provides?(:ip6)) # TODO revist this for VMs
+      ip6.present? || compute_provides_ip?(:ip6)
     end
 
     def mac_available?
-      mac.present? || (host.present? && host.compute_provides?(:mac)) # TODO revist this for VMs
+      mac.present? || (host.present? && host.compute_provides?(:mac))
     end
 
     protected

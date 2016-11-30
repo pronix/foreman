@@ -24,9 +24,7 @@ class Role < ActiveRecord::Base
 
   # Built-in roles
   BUILTIN_DEFAULT_ROLE = 2
-  audited :allow_mass_assignment => true
-
-  attr_accessible :name, :permissions
+  audited
 
   scope :givable, -> { where(:builtin => 0).order(:name) }
   scope :for_current_user, -> { User.current.admin? ? where('0 = 0') : where(:id => User.current.role_ids) }
@@ -38,6 +36,7 @@ class Role < ActiveRecord::Base
   validates_lengths_from_database
 
   before_destroy :check_deletable
+  after_save :sync_inheriting_filters
 
   has_many :user_roles, :dependent => :destroy
   has_many :users, :through => :user_roles, :source => :owner, :source_type => 'User'
@@ -49,15 +48,21 @@ class Role < ActiveRecord::Base
 
   has_many :permissions, :through => :filters
 
+  # these associations are not used by Taxonomix but serve as a pattern for role filters
+  # we intentionally don't include Taxonomix since roles are not taxable, we only need these relations
+  taxonomy_join_table = :taxable_taxonomies
+  has_many taxonomy_join_table.to_sym, :dependent => :destroy, :as => :taxable
+  has_many :locations, -> { where(:type => 'Location') },
+           :through => taxonomy_join_table, :source => :taxonomy
+  has_many :organizations, -> { where(:type => 'Organization') },
+           :through => taxonomy_join_table, :source => :taxonomy
+
   validates :name, :presence => true, :uniqueness => true
   validates :builtin, :inclusion => { :in => 0..2 }
 
   scoped_search :on => :name, :complete_value => true
-
-  def initialize(*args)
-    super(*args)
-    self.builtin = 0
-  end
+  scoped_search :on => :builtin, :complete_value => { :true => true, :false => false }
+  scoped_search :on => :description, :complete_value => false
 
   def permissions=(new_permissions)
     add_permissions(new_permissions.map(&:name).uniq) if new_permissions.present?
@@ -104,9 +109,7 @@ class Role < ActiveRecord::Base
   def self.default
     default_role = find_by_builtin(BUILTIN_DEFAULT_ROLE)
     if default_role.nil?
-      default_role = create!(:name => 'Default role') do |role|
-        role.builtin = BUILTIN_DEFAULT_ROLE
-      end
+      default_role = create!(:name => 'Default role', :builtin => BUILTIN_DEFAULT_ROLE)
       raise ::Foreman::Exception.new(N_("Unable to create the default role.")) if default_role.new_record?
     end
     default_role
@@ -138,7 +141,15 @@ class Role < ActiveRecord::Base
     save!
   end
 
-private
+  def disable_filters_overriding
+    self.filters.where(:override => true).map { |filter| filter.disable_overriding! }
+  end
+
+  private
+
+  def sync_inheriting_filters
+    self.filters.where(:override => false).each { |f| f.inherit_taxonomies! }
+  end
 
   def allowed_permissions
     @allowed_permissions ||= permission_names + Foreman::AccessControl.public_permissions.map(&:name)
@@ -149,8 +160,7 @@ private
   end
 
   def check_deletable
-    errors.add(:base, _("Role is in use")) if users.any?
-    errors.add(:base, _("Can't delete built-in role")) if builtin?
+    errors.add(:base, _("Cannot delete built-in role")) if builtin?
     errors.empty?
   end
 end

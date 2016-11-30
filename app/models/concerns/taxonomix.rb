@@ -1,6 +1,7 @@
 module Taxonomix
   extend ActiveSupport::Concern
   include DirtyAssociations
+  include OptionalAttrAccessible
 
   included do
     taxonomy_join_table = :taxable_taxonomies
@@ -22,7 +23,7 @@ module Taxonomix
 
     validate :ensure_taxonomies_not_escalated, :if => Proc.new { User.current.nil? || !User.current.admin? }
 
-    attr_accessible :locations, :location_ids, :location_names, :organizations,
+    optional_attr_accessible :locations, :location_ids, :location_names, :organizations,
       :organization_ids, :organization_names
   end
 
@@ -35,7 +36,7 @@ module Taxonomix
       self.which_location        = Location.expand(loc) if SETTINGS[:locations_enabled]
       self.which_organization    = Organization.expand(org) if SETTINGS[:organizations_enabled]
       scope = block_given? ? yield : where('1=1')
-      scope = scope.where(:id => taxable_ids) if taxable_ids
+      scope = scope_by_taxable_ids(scope)
       scope.readonly(false)
     end
 
@@ -74,14 +75,14 @@ module Taxonomix
     def taxable_ids(loc = which_location, org = which_organization, inner_method = which_ancestry_method)
       if SETTINGS[:locations_enabled] && loc.present?
         inner_ids_loc = if Location.ignore?(self.to_s)
-                          self.pluck("#{table_name}.id")
+                          self.unscoped.pluck("#{table_name}.id")
                         else
                           inner_select(loc, inner_method)
                         end
       end
       if SETTINGS[:organizations_enabled] && org.present?
         inner_ids_org = if Organization.ignore?(self.to_s)
-                          self.pluck("#{table_name}.id")
+                          self.unscoped.pluck("#{table_name}.id")
                         else
                           inner_select(org, inner_method)
                         end
@@ -108,13 +109,27 @@ module Taxonomix
     end
 
     def admin_ids
-      User.unscoped.where(:admin => true).pluck(:id) if self == User
+      User.unscoped.only_admin.pluck(:id) if self == User
+    end
+
+    def scope_by_taxable_ids(scope)
+      case (cached_ids = taxable_ids)
+      when nil
+        scope
+      when []
+        # If *no* taxable ids were found, then don't show any resources
+        scope.where(:id => [])
+      else
+        # We need to generate the WHERE part of the SQL query as a string,
+        # otherwise the default scope would set id on each new instance
+        # and the same taxable_id on taxable_taxonomy objects
+        scope.where("#{self.table_name}.id IN (#{cached_ids.join(',')})")
+      end
     end
   end
 
   def set_current_taxonomy
     if self.new_record? && self.errors.empty?
-      self.id = nil #fix for rails 3.2.8 bug that sets id = 1 on after_initialize. This can later be removed.
       self.locations     << Location.current     if add_current_location?
       self.organizations << Organization.current if add_current_organization?
     end
@@ -204,7 +219,7 @@ module Taxonomix
   end
 
   def used_taxonomy_ids(type)
-    return [] if new_record?
+    return [] if new_record? || !self.respond_to?(:hosts)
     Host::Base.where(taxonomy_foreign_key_conditions).uniq.pluck(type).compact
   end
 

@@ -4,12 +4,13 @@ class Setting < ActiveRecord::Base
   extend FriendlyId
   friendly_id :name
   include ActiveModel::Validations
+  include EncryptValue
   self.inheritance_column = 'category'
 
   TYPES= %w{ integer boolean hash array string }
   FROZEN_ATTRS = %w{ name category full_name }
   NONZERO_ATTRS = %w{ puppet_interval idle_timeout entries_per_page max_trend outofsync_interval }
-  BLANK_ATTRS = %w{ trusted_puppetmaster_hosts login_delegation_logout_url authorize_login_delegation_auth_source_user_autocreate root_pass default_location default_organization websockets_ssl_key websockets_ssl_cert oauth_consumer_key oauth_consumer_secret }
+  BLANK_ATTRS = %w{ trusted_puppetmaster_hosts login_delegation_logout_url authorize_login_delegation_auth_source_user_autocreate root_pass default_location default_organization websockets_ssl_key websockets_ssl_cert oauth_consumer_key oauth_consumer_secret login_text}
   ARRAY_HOSTNAMES = %w{ trusted_puppetmaster_hosts }
   URI_ATTRS = %w{ foreman_url unattended_url }
   URI_BLANK_ATTRS = %w{ login_delegation_logout_url }
@@ -23,11 +24,9 @@ class Setting < ActiveRecord::Base
     end
   end
 
-  attr_accessible :name, :value, :description, :category, :settings_type, :default, :full_name
-
   validates_lengths_from_database
   # audit the changes to this model
-  audited :except => [:name, :description, :category, :settings_type, :full_name], :on => [:update], :allow_mass_assignment => true
+  audited :except => [:name, :description, :category, :settings_type, :full_name, :encrypted], :on => [:update]
 
   validates :name, :presence => true, :uniqueness => true
   validates :description, :presence => true
@@ -71,6 +70,10 @@ class Setting < ActiveRecord::Base
 
   def self.per_page; 20 end # can't use our own settings
 
+  def self.humanized_category
+    nil
+  end
+
   def self.[](name)
     name = name.to_s
     cache_value = Setting.cache.read(name)
@@ -91,26 +94,32 @@ class Setting < ActiveRecord::Base
   end
 
   def self.method_missing(method, *args)
-    super(method, *args)
+    super
   rescue NoMethodError
     method_name = method.to_s
 
     #setter method
     if method_name =~ /=\Z/
-      self[method_name.chomp("=")] = args.first
+      setting_name = method_name.chomp("=")
+      Foreman::Deprecation.deprecation_warning('1.16', "Setting.#{method_name} must be replaced with Setting[:#{setting_name}]= to write settings")
+      self[setting_name] = args.first
       #getter
     else
+      Foreman::Deprecation.deprecation_warning('1.16', "Setting.#{method_name} must be replaced with Setting[:#{method_name}] to read settings")
       self[method_name]
     end
   end
 
   def value=(v)
     v = v.to_yaml unless v.nil?
+    # the has_attribute is for enabling DB migrations on older versions
+    v = encrypt_field(v) if has_attribute?(:encrypted) && encrypted
     write_attribute :value, v
   end
 
   def value
     v = read_attribute(:value)
+    v = decrypt_field(v)
     v.nil? ? default : YAML.load(v)
   end
   alias_method :value_before_type_cast, :value
@@ -200,12 +209,19 @@ class Setting < ActiveRecord::Base
 
   def self.create_existing(s, opts)
     bypass_readonly(s) do
-      attrs = column_check([:default, :description, :full_name])
+      attrs = column_check([:default, :description, :full_name, :encrypted])
       to_update = Hash[opts.select { |k,v| attrs.include? k }]
       to_update.merge!(:value => SETTINGS[opts[:name].to_sym]) if SETTINGS.key?(opts[:name].to_sym)
       s.update_attributes(to_update)
       s.update_column :category, opts[:category] if s.category != opts[:category]
       s.update_column :full_name, opts[:full_name] if !column_check([:full_name]).empty?
+      raw_value = s.read_attribute(:value)
+      if s.is_encryptable?(raw_value) && attrs.include?(:encrypted) && opts[:encrypted]
+        s.update_column :value, s.encrypt_field(raw_value)
+      end
+      if s.is_decryptable?(raw_value) && attrs.include?(:encrypted) && !opts[:encrypted]
+        s.update_column :value, s.decrypt_field(raw_value)
+      end
     end
     s
   end
@@ -236,7 +252,8 @@ class Setting < ActiveRecord::Base
         define_method("#{name}_collection".to_sym){ options[:collection].call }
       end
     end
-    {:name => name, :value => value, :description => description, :default => default, :full_name => full_name}
+    options[:encrypted] ||= false
+    {:name => name, :value => value, :description => description, :default => default, :full_name => full_name, :encrypted => options[:encrypted]}
   end
 
   def self.model_name

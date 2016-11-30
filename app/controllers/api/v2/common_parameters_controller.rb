@@ -1,14 +1,15 @@
-
 module Api
   module V2
     class CommonParametersController < V2::BaseController
+      include Foreman::Controller::Parameters::Parameter
+
       before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/common_parameters/", N_("List all global parameters.")
       param_group :search_and_pagination, ::Api::V2::BaseController
 
       def index
-        @common_parameters = resource_scope_for_index(:permission => :view_globals)
+        @common_parameters = resource_scope_for_index(:permission => :view_params)
       end
 
       api :GET, "/common_parameters/:id/", N_("Show a global parameter")
@@ -29,7 +30,7 @@ module Api
       param_group :common_parameter, :as => :create
 
       def create
-        @common_parameter = CommonParameter.new(params[:common_parameter])
+        @common_parameter = CommonParameter.new(parameter_params(::CommonParameter))
         process_response @common_parameter.save
       end
 
@@ -38,7 +39,7 @@ module Api
       param_group :common_parameter
 
       def update
-        process_response @common_parameter.update_attributes(params[:common_parameter])
+        process_response @common_parameter.update_attributes(parameter_params(::CommonParameter))
       end
 
       api :DELETE, "/common_parameters/:id/", N_("Delete a global parameter")
@@ -46,6 +47,20 @@ module Api
 
       def destroy
         process_response @common_parameter.destroy
+      end
+
+      private
+
+      def controller_permission
+        'params'
+      end
+
+      def resource_scope(*args, &block)
+        super.where(:type => 'CommonParameter')
+      end
+
+      def resource_class
+        Parameter
       end
     end
   end

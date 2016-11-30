@@ -1,13 +1,16 @@
 class InterfacesController < ApplicationController
+  include Foreman::Controller::Parameters::Host
+
   # params structure is
   #   {"host"=>
   #     {"interfaces_attributes"=>
-  #       {"new_1405068143746"=>
+  #       {"1405068143746"=>
   #         {"_destroy"=>"false", "type"=>"Nic::BMC", "mac"=>"", "name"=>"", "domain_id"=>"", "ip"=>""}}}}
   def new
-    @host = Host.new params[:host]
+    safe_params = host_params('host')
+    @host = Host.new(safe_params)
 
-    attributes = params[:host].fetch(:interfaces_attributes, {})
+    attributes = safe_params.fetch(:interfaces_attributes, {})
     @key, attributes = attributes.first
     raise Foreman::Exception, 'Missing attributes for interface' if @key.blank?
 
@@ -22,5 +25,20 @@ class InterfacesController < ApplicationController
     end
 
     render 'nic/new'
+  end
+
+  def random_name
+    render :json => { :name => NameGenerator.new.next_mac_name(params[:mac]) }
+  rescue ActionView::Template::Error => exception
+    process_ajax_error exception, 'generate random name'
+  end
+
+  def action_permission
+    case params[:action]
+      when 'random_name'
+        :edit
+      else
+        super
+    end
   end
 end

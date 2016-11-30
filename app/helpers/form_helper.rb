@@ -15,17 +15,6 @@ module FormHelper
     end
   end
 
-  def button_input_group(content, options = {}, glyph = nil)
-    options[:type] ||= 'button'
-    options[:herf] ||= '#'
-    options[:class] ||= 'btn btn-default'
-    content_tag :span, class: 'input-group-btn' do
-      content_tag :button, content, options  do
-        content_tag :span,content, :class => glyph
-      end
-    end
-  end
-
   def password_f(f, attr, options = {})
     unset_button = options.delete(:unset)
     password_field_tag(:fakepassword, nil, :style => 'display: none') +
@@ -39,8 +28,8 @@ module FormHelper
              title="'.html_safe + _('Caps lock ON') +
               '" style="display:none"></span>'.html_safe
           if unset_button
-            button = button_input_group '', {:id => 'disable-pass-btn', :onclick => "toggle_input_group(this)", :title => _("Change the password")}, 'glyphicon glyphicon-pencil'
-            input_group pass, button
+            button = link_to_function(icon_text('pencil'), 'toggle_input_group(this)', {:id => 'disable-pass-btn', :class => 'btn btn-default', :title => _("Change the password")})
+            input_group(pass, input_group_btn(button))
           else
             pass
           end
@@ -57,21 +46,23 @@ module FormHelper
   end
 
   def multiple_checkboxes(f, attr, klass, associations, options = {}, html_options = {})
-    if associations.count > 5
-      associated_obj = klass.send(ActiveModel::Naming.plural(associations.first))
-      selected_ids = associated_obj.select("#{associations.first.class.table_name}.id").map(&:id)
-      multiple_selects(f, attr, associations, selected_ids, options, html_options)
-    else
-      field(f, attr, options) do
-        authorized_edit_habtm klass, associations, options[:prefix], html_options
-      end
-    end
+    associated_obj = klass.send(ActiveModel::Naming.plural(associations.new))
+    selected_ids = associated_obj.select("#{associations.new.class.table_name}.id").map(&:id)
+    multiple_selects(f, attr, associations, selected_ids, options, html_options)
   end
 
   # add hidden field for options[:disabled]
   def multiple_selects(f, attr, associations, selected_ids, options = {}, html_options = {})
     options.merge!(:size => "col-md-10")
-    authorized = AssociationAuthorizer.authorized_associations(associations).all
+    case attr
+      when :organizations
+        klass = Organization
+      when :locations
+        klass = Location
+      else
+        klass = nil
+    end
+    authorized = AssociationAuthorizer.authorized_associations(associations.reorder(nil), klass).all
 
     # select2.js breaks the multiselects disabled items location
     # http://projects.theforeman.org/issues/12028
@@ -183,6 +174,14 @@ module FormHelper
     end
   end
 
+  def spinner_button_f(f, caption, action, html_options = {})
+    html_options[:class] ||= 'btn-default'
+    html_options[:class] = "btn btn-spinner #{html_options[:class]}"
+    caption = '<div class="caption">' + caption + '</div>'
+    caption += hidden_spinner('', :id => html_options[:spinner_id], :class => html_options[:spinner_class])
+    link_to_function(caption.html_safe, action, html_options)
+  end
+
   def file_field_f(f, attr, options = {})
     field(f, attr, options) do
       f.file_field attr, options
@@ -200,6 +199,30 @@ module FormHelper
                                :name        => "#{f.object_name}[#{attr}]"
                            )
       ).html_safe
+    end
+  end
+
+  def byte_size_f(f, attr, options = {})
+    options[:class] = options[:class].to_s + ' byte_spinner'
+    options[:help_inline] ||= popover('', _("When specifying custom value, add 'MB' or 'GB' at the end. Field is not case sensitive and MB is default if unspecified."))
+    options[:help_block] ||= soft_limit_warning_block
+    options[:help_block] += f.hidden_field(attr, :class => "real-hidden-value", :id => nil)
+
+    text_f(f, attr, options)
+  end
+
+  def counter_f(f, attr, options = {})
+    options[:class] = options[:class].to_s + ' counter_spinner'
+    options[:help_block] ||= soft_limit_warning_block
+
+    text_f(f, attr, options)
+  end
+
+  def soft_limit_warning_block
+    content_tag(:span, :class => 'maximum-limit hidden') do
+      icon_text('warning-triangle-o',
+                content_tag(:span, ' ' + _('Specified value is higher than recommended maximum'), :class => 'error-message'),
+                :kind => 'pficon')
     end
   end
 
@@ -228,8 +251,7 @@ module FormHelper
         options = {}
         options[:class] = "btn btn-#{overwrite ? 'danger' : 'primary'} remove_form_templates"
         options.merge! :'data-id' => form_to_submit_id(f) unless options.has_key?(:'data-id')
-        link_to(_("Cancel"), args[:cancel_path], :class => "btn btn-default") + " " +
-            f.submit(text, options)
+        link_to(_("Cancel"), args[:cancel_path], :class => "btn btn-default") + " " + f.submit(text, options)
       end
     end
   end
@@ -266,7 +288,7 @@ module FormHelper
   end
 
   def help_inline(inline, error)
-    help_inline = error.empty? ? inline : content_tag(:span, error.to_sentence.html_safe, :class => 'error-message')
+    help_inline = error.empty? ? inline : content_tag(:span, error.to_sentence, :class => 'error-message')
     case help_inline
       when blank?
         ""
@@ -284,7 +306,7 @@ module FormHelper
     label = options[:label] == :none ? '' : options.delete(:label)
     label ||= ((clazz = f.object.class).respond_to?(:gettext_translation_for_attribute_name) &&
         s_(clazz.gettext_translation_for_attribute_name attr)) if f
-    label = label.present? ? label_tag(attr, "#{label}#{required_mark}".html_safe, :class => label_size + " control-label") : ''
+    label = label.present? ? label_tag(attr, "#{label}#{required_mark}", :class => label_size + " control-label") : ''
     label
   end
 
@@ -322,6 +344,7 @@ module FormHelper
     table_field = options.delete(:table_field)
     error       = options.delete(:error) || f.object.errors[attr] if f && f.object.respond_to?(:errors)
     help_inline = help_inline(options.delete(:help_inline), error)
+    help_inline += options[:help_inline_permanent] unless options[:help_inline_permanent].nil?
     size_class  = options.delete(:size) || "col-md-4"
     wrapper_class = options.delete(:wrapper_class) || "form-group"
 
@@ -338,8 +361,8 @@ module FormHelper
         content_tag(:div, :class => "#{wrapper_class} #{error.empty? ? '' : 'has-error'}",
                     :id => options.delete(:control_group_id)) do
           input = capture do
-            if options[:fullscreen]
-              content_tag(:div, yield.html_safe + fullscreen_input, :class => "input-group")
+            if (group_btn = options.delete(:input_group_btn))
+              input_group(yield.html_safe, input_group_btn(group_btn))
             else
               yield.html_safe
             end

@@ -1,6 +1,8 @@
 module Api
   module V2
     class RolesController < V2::BaseController
+      include Foreman::Controller::Parameters::Role
+
       before_action :find_optional_nested_object
       before_action :find_resource, :only => %w{show update destroy}
 
@@ -14,6 +16,7 @@ module Api
 
       api :GET, "/roles/:id/", N_("Show a role")
       param :id, :identifier, :required => true
+      param :description, String, :required => false
 
       def show
       end
@@ -21,6 +24,7 @@ module Api
       def_param_group :role do
         param :role, Hash, :required => true, :action_aware => true do
           param :name, String, :required => true
+          param_group :taxonomies, ::Api::V2::BaseController
         end
       end
 
@@ -28,7 +32,7 @@ module Api
       param_group :role, :as => :create
 
       def create
-        @role = Role.new(params[:role])
+        @role = Role.new(role_params)
         process_response @role.save
       end
 
@@ -37,7 +41,7 @@ module Api
       param_group :role
 
       def update
-        process_response @role.update_attributes(params[:role])
+        process_response @role.update_attributes(role_params)
       end
 
       api :DELETE, "/roles/:id/", N_("Delete a role")

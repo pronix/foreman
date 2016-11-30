@@ -35,8 +35,8 @@ module HostsHelper
     "hosts/provision_method/#{provision_method}/#{partial}"
   end
 
-  def nic_info_js(compute_resource)
-    javascript_include_tag("compute_resources/#{compute_resource.provider.downcase}/nic_info.js")
+  def compute_specific_js(compute_resource, js_name)
+    javascript_include_tag("compute_resources/#{compute_resource.provider.downcase}/#{js_name}.js")
   end
 
   def value_hash_cache(host)
@@ -254,19 +254,21 @@ module HostsHelper
       ]
     ]
     fields += host_detailed_status_list(host)
-    fields += [[_("Domain"), (link_to(host.domain, hosts_path(:search => "domain = #{host.domain}")))]] if host.domain.present?
-    fields += [[_("Realm"), (link_to(host.realm, hosts_path(:search => "realm = #{host.realm}")))]] if host.realm.present?
+    fields += [[_("Domain"), (link_to(host.domain, hosts_path(:search => %{domain = "#{host.domain}"})))]] if host.domain.present?
+    fields += [[_("Realm"), (link_to(host.realm, hosts_path(:search => %{realm = "#{host.realm}"})))]] if host.realm.present?
     fields += [[_("IP Address"), host.ip]] if host.ip.present?
+    fields += [[_("IPv6 Address"), host.ip6]] if host.ip6.present?
     fields += [[_("MAC Address"), host.mac]] if host.mac.present?
-    fields += [[_("Puppet Environment"), (link_to(host.environment, hosts_path(:search => "environment = #{host.environment}")))]] if host.environment.present?
-    fields += [[_("Host Architecture"), (link_to(host.arch, hosts_path(:search => "architecture = #{host.arch}")))]] if host.arch.present?
-    fields += [[_("Operating System"), (link_to(host.operatingsystem.to_label, hosts_path(:search => "os_description = #{host.operatingsystem.description}")))]] if host.operatingsystem.present?
+    fields += [[_("Puppet Environment"), (link_to(host.environment, hosts_path(:search => %{environment = "#{host.environment}"})))]] if host.environment.present?
+    fields += [[_("Host Architecture"), (link_to(host.arch, hosts_path(:search => %{architecture = "#{host.arch}"})))]] if host.arch.present?
+    fields += [[_("Operating System"), (link_to(host.operatingsystem.to_label, hosts_path(:search => %{os_title = "#{host.operatingsystem.title}"})))]] if host.operatingsystem.present?
+    fields += [[_("PXE Loader"), host.pxe_loader]] if host.operatingsystem.present? && host.pxe_build?
     fields += [[_("Host group"), (link_to(host.hostgroup, hosts_path(:search => %{hostgroup_title = "#{host.hostgroup}"})))]] if host.hostgroup.present?
-    fields += [[_("Location"), (link_to(host.location.title, hosts_path(:search => "location = #{host.location}")) if host.location)]] if SETTINGS[:locations_enabled]
-    fields += [[_("Organization"), (link_to(host.organization.title, hosts_path(:search => "organization = #{host.organization}")) if host.organization)]] if SETTINGS[:organizations_enabled]
+    fields += [[_("Location"), (link_to(host.location.title, hosts_path(:search => %{location = "#{host.location}"})) if host.location)]] if SETTINGS[:locations_enabled]
+    fields += [[_("Organization"), (link_to(host.organization.title, hosts_path(:search => %{organization = "#{host.organization}"})) if host.organization)]] if SETTINGS[:organizations_enabled]
     if SETTINGS[:login]
       if host.owner_type == _("User")
-        fields += [[_("Owner"), (link_to(host.owner, hosts_path(:search => "user.login = #{host.owner.login}")) if host.owner)]]
+        fields += [[_("Owner"), (link_to(host.owner, hosts_path(:search => %{user.login = "#{host.owner.login}"})) if host.owner)]]
       else
         fields += [[_("Owner"), host.owner]]
       end
@@ -300,7 +302,9 @@ module HostsHelper
     title_actions(
         button_group(
             link_to_if_authorized(_("Edit"), hash_for_edit_host_path(:id => host).merge(:auth_object => host),
-                                    :title    => _("Edit your host"), :id => "edit-button", :class => 'btn btn-default'),
+                                    :title    => _("Edit this host"), :id => "edit-button", :class => 'btn btn-default'),
+            display_link_if_authorized(_("Clone"), hash_for_clone_host_path(:id => host).merge(:auth_object => host),
+                                    :title    => _("Clone this host"), :id => "clone-button", :class => 'btn btn-default'),
             if host.build
               link_to_if_authorized(_("Cancel build"), hash_for_cancelBuild_host_path(:id => host).merge(:auth_object => host, :permission => 'build_hosts'),
                                     :disabled => host.can_be_built?,
@@ -468,5 +472,14 @@ module HostsHelper
       SmartProxy.with_features(proxy_feature).map {|p| [p.name, p.id]},
       {},
       { :onchange => "toggle_multiple_ok_button(this)" }
+  end
+
+  def randomize_mac_link
+    link_to_function(icon_text('random'), 'randomizeName()', :class => 'btn btn-default',
+      :title => _('Generate new random name. Visit Settings to disable this feature.')) if NameGenerator.random_based?
+  end
+
+  def power_status_visible?
+    SETTINGS[:unattended] && Setting[:host_power_status]
   end
 end

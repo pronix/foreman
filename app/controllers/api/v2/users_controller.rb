@@ -1,13 +1,17 @@
 module Api
   module V2
     class UsersController < V2::BaseController
-      wrap_parameters User, :include => User.accessible_attributes
-
       before_action :find_resource, :only => %w{show update destroy}
       # find_resource needs to be defined prior to UsersMixin is included, it depends on @user
       include Foreman::Controller::UsersMixin
+      include Foreman::Controller::Parameters::User
       include Api::Version2
       include Api::TaxonomyScope
+
+      wrap_parameters User, :include => user_params_filter.accessible_attributes(
+        Foreman::Controller::Parameters::User::Context.new(:api, controller_name, nil, false)) +
+        ['compute_attributes']
+
       before_action :find_optional_nested_object
 
       api :GET, "/users/", N_("List all users")
@@ -38,12 +42,13 @@ module Api
           param :firstname, String, :required => false
           param :lastname, String, :required => false
           param :mail, String, :required => true
+          param :description, String, :required => false
           param :admin, :bool, :required => false, :desc => N_("is an admin account")
           param :password, String, :required => true
           param :default_location_id, Integer if SETTINGS[:locations_enabled]
           param :default_organization_id, Integer if SETTINGS[:organizations_enabled]
           param :auth_source_id, Integer, :required => true
-          param :timezone, ActiveSupport::TimeZone.zones_map.keys, :required => false, :desc => N_("User's timezone")
+          param :timezone, ActiveSupport::TimeZone.all.map(&:name), :required => false, :desc => N_("User's timezone")
           param :locale, FastGettext.available_locales, :required => false, :desc => N_("User's preferred locale")
           param_group :taxonomies, ::Api::V2::BaseController
         end
@@ -56,6 +61,7 @@ module Api
       param_group :user, :as => :create
 
       def create
+        @user = User.new(user_params)
         if @user.save
           process_success
         else
@@ -72,7 +78,7 @@ module Api
       param_group :user
 
       def update
-        if @user.update_attributes(params[:user])
+        if @user.update_attributes(user_params)
           update_sub_hostgroups_owners
 
           process_success
@@ -100,6 +106,10 @@ module Api
 
       def allowed_nested_id
         %w(auth_source_ldap_id role_id location_id organization_id usergroup_id)
+      end
+
+      def parameter_filter_context
+        Foreman::Controller::Parameters::User::Context.new(:api, controller_name, params[:action], editing_self?)
       end
     end
   end

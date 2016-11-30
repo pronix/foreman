@@ -13,8 +13,8 @@ class Setting::Auth < Setting
     self.transaction do
       [
         self.set('oauth_active', N_("Foreman will use OAuth for API authorization"), false, N_('OAuth active')),
-        self.set('oauth_consumer_key', N_("OAuth consumer key"), '', N_('OAuth consumer key')),
-        self.set('oauth_consumer_secret', N_("OAuth consumer secret"), '', N_("OAuth consumer secret")),
+        self.set('oauth_consumer_key', N_("OAuth consumer key"), '', N_('OAuth consumer key'), nil, {:encrypted => true}),
+        self.set('oauth_consumer_secret', N_("OAuth consumer secret"), '', N_("OAuth consumer secret"), nil, {:encrypted => true}),
         self.set('oauth_map_users', N_("Foreman will map users by username in request-header. If this is set to false, OAuth requests will have admin rights."), true, N_('OAuth map users')),
         self.set('restrict_registered_smart_proxies', N_('Only known Smart Proxies may access features that use Smart Proxy authentication'), true, N_('Restrict registered smart proxies')),
         self.set('require_ssl_smart_proxies', N_('Client SSL certificates are used to identify Smart Proxies (:require_ssl should also be enabled)'), true, N_('Require SSL for smart proxies')),
@@ -25,7 +25,7 @@ class Setting::Auth < Setting
         self.set('ssl_client_dn_env', N_('Environment variable containing the subject DN from a client SSL certificate'), 'SSL_CLIENT_S_DN', N_('SSL client DN env')),
         self.set('ssl_client_verify_env', N_('Environment variable containing the verification status of a client SSL certificate'), 'SSL_CLIENT_VERIFY', N_('SSL client verify env')),
         self.set('ssl_client_cert_env', N_("Environment variable containing a client's SSL certificate"), 'SSL_CLIENT_CERT', N_('SSL client cert env')),
-        self.set('websockets_ssl_key', N_("Private key that Foreman will use to encrypt websockets "), nil, N_('Websockets SSL key')),
+        self.set('websockets_ssl_key', N_("Private key file that Foreman will use to encrypt websockets "), nil, N_('Websockets SSL key')),
         self.set('websockets_ssl_cert', N_("Certificate that Foreman will use to encrypt websockets "), nil, N_('Websockets SSL certificate')),
         # websockets_encrypt depends on key/cert when true, so initialize it last
         self.set('websockets_encrypt', N_("VNC/SPICE websocket proxy console access encryption (websockets_ssl_key/cert setting required)"), !!SETTINGS[:require_ssl], N_('Websockets encryption')),
@@ -33,11 +33,22 @@ class Setting::Auth < Setting
         self.set('authorize_login_delegation_auth_source_user_autocreate', N_('Name of the external auth source where unknown externally authentication users (see authorize_login_delegation) should be created (keep unset to prevent the autocreation)'), nil, N_('Authorize login delegation auth source user autocreate')),
         self.set('authorize_login_delegation', N_("Authorize login delegation with REMOTE_USER environment variable"), false, N_('Authorize login delegation')),
         self.set('authorize_login_delegation_api', N_("Authorize login delegation with REMOTE_USER environment variable for API calls too"), false, N_('Authorize login delegation API')),
-        self.set('idle_timeout', N_("Log out idle users after a certain number of minutes"), 60, N_('Idle timeout'))
+        self.set('idle_timeout', N_("Log out idle users after a certain number of minutes"), 60, N_('Idle timeout')),
+        self.set('bmc_credentials_accessible', N_("Permits access to BMC interface passwords through ENC YAML output and in templates"), true, N_('BMC credentials access'))
       ].compact.each { |s| self.create! s.update(:category => "Setting::Auth")}
     end
 
     true
+  end
+
+  def self.humanized_category
+    N_('Authentication')
+  end
+
+  def validate_bmc_credentials_accessible(record)
+    if !record.value && !Setting[:safemode_render]
+      record.errors[:base] << _("Unable to disable bmc_credentials_accessible when safemode_render is disabled")
+    end
   end
 
   def validate_websockets_encrypt(record)

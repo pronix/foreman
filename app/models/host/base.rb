@@ -11,34 +11,9 @@ module Host
     friendly_id :name
     OWNER_TYPES = %w(User Usergroup)
 
-    attr_accessible :name, :managed, :type, :start, :mac, :ip, :ip6, :root_pass,
-      :is_owned_by, :enabled, :comment,
-      :overwrite, :capabilities, :provider, :last_compile,
-      # Model relations sorted in alphabetical order
-      :architecture, :architecture_id, :architecture_name,
-      :config_group, :config_group_ids, :config_group_names,
-      :domain, :domain_id, :domain_name,
-      :environment, :environment_id, :environment_name,
-      :hardware_model_id, :hardware_model_name,
-      :hostgroup, :hostgroup_id, :hostgroup_name,
-      :host_parameters_attributes,
-      :interfaces, :interfaces_attributes,
-      :location, :location_id, :location_name,
-      :medium, :medium_id, :medium_name,
-      :model, :model_id, :model_name,
-      :operatingsystem, :operatingsystem_id, :operatingsystem_name,
-      :organization, :organization_id, :organization_name,
-      :ptable, :ptable_id, :ptable_name,
-      :puppet_ca_proxy, :puppet_ca_proxy_id, :puppet_ca_proxy_name,
-      :puppet_proxy, :puppet_proxy_id, :puppet_proxy_name,
-      :puppetclasses, :puppetclass_ids, :puppetclass_names,
-      :progress_report, :progress_report_id, :progress_report_name,
-      :realm, :realm_id, :realm_name,
-      :subnet, :subnet_id, :subnet_name,
-      :subnet6, :subnet6_id, :subnet6_name
-
     validates_lengths_from_database
     belongs_to :model, :name_accessor => 'hardware_model_name'
+    belongs_to :owner, :polymorphic => true
     has_many :fact_values, :dependent => :destroy, :foreign_key => :host_id
     has_many :fact_names, :through => :fact_values
     has_many :interfaces, -> { order(:identifier) }, :dependent => :destroy, :inverse_of => :host, :class_name => 'Nic::Base',
@@ -54,13 +29,19 @@ module Host
     belongs_to :organization
 
     alias_attribute :hostname, :name
+    before_validation :set_default_user
+
     validates :name, :presence   => true, :uniqueness => true, :format => {:with => Net::Validations::HOST_REGEXP}
     validates :owner_type, :inclusion => { :in          => OWNER_TYPES,
                                            :allow_blank => true,
                                            :message     => (_("Owner type needs to be one of the following: %s") % OWNER_TYPES.join(', ')) }
+    validate :validate_owner
     validate :host_has_required_interfaces
     validate :uniq_interfaces_identifiers
     validate :build_managed_only
+    validate :owner_taxonomies_match, :if => Proc.new { |host| host.owner.is_a?(User) }
+
+    include PxeLoaderSuggestion
 
     default_scope -> { where(taxonomy_conditions) }
 
@@ -76,6 +57,12 @@ module Host
     scope :no_location,     -> { rewhere(:location_id => nil) }
     scope :no_organization, -> { rewhere(:organization_id => nil) }
 
+    PRIMARY_INTERFACE_ATTRIBUTES = [:name, :ip, :ip6, :mac,
+                                    :subnet, :subnet_id, :subnet_name,
+                                    :subnet6, :subnet6_id, :subnet6_name,
+                                    :domain, :domain_id, :domain_name,
+                                    :lookup_values_attributes].freeze
+
     # primary interface is mandatory because of delegated methods so we build it if it's missing
     # similar for provision interface
     # we can't set name attribute until we have primary interface so we don't pass it to super
@@ -83,31 +70,18 @@ module Host
     # we can't create primary interface before calling super because args may contain nested
     # interface attributes
     def initialize(*args)
-      primary_interface_attrs = [:name, :ip, :ip6, :mac,
-                                 :subnet, :subnet_id, :subnet_name,
-                                 :subnet6, :subnet6_id, :subnet6_name,
-                                 :domain, :domain_id, :domain_name,
-                                 :lookup_values_attributes]
       values_for_primary_interface = {}
-
-      new_attrs = args.shift
-      unless new_attrs.nil?
-        new_attrs = new_attrs.with_indifferent_access
-        primary_interface_attrs.each do |attr|
-          values_for_primary_interface[attr] = new_attrs.delete(attr) if new_attrs.has_key?(attr)
-        end
-
-        model_name = new_attrs.delete(:model_name)
-        new_attrs[:hardware_model_name] = model_name if model_name.present?
-
-        args.unshift(new_attrs)
-      end
+      build_values_for_primary_interface!(values_for_primary_interface, args)
 
       super(*args)
 
       build_required_interfaces
-      values_for_primary_interface.each do |name, value|
-        self.send "#{name}=", value
+      update_primary_interface_attributes(values_for_primary_interface)
+    end
+
+    def dup
+      super.tap do |host|
+        host.interfaces << self.primary_interface.dup if self.primary_interface.present?
       end
     end
 
@@ -132,9 +106,13 @@ module Host
       super - [ inheritance_column ]
     end
 
+    def create_new_host_when_facts_are_uploaded?
+      Setting[:create_new_host_when_facts_are_uploaded]
+    end
+
     # expect a facts hash
     def import_facts(facts)
-      return false unless Setting[:create_new_host_when_facts_are_uploaded]
+      return false if !create_new_host_when_facts_are_uploaded? && new_record?
 
       # we are not importing facts for hosts in build state (e.g. waiting for a re-installation)
       raise ::Foreman::Exception.new('Host is pending for Build') if build?
@@ -151,8 +129,8 @@ module Host
       importer.import!
 
       save(:validate => false)
-      populate_fields_from_facts(facts, type)
       set_taxonomies(facts)
+      populate_fields_from_facts(facts, type)
 
       # we are saving here with no validations, as we want this process to be as fast
       # as possible, assuming we already have all the right settings in Foreman.
@@ -199,7 +177,7 @@ module Host
       end
 
       parser.interfaces.each do |name, attributes|
-        iface = get_interface_scope(name, attributes).first || interface_class(name).new(:managed => false)
+        iface = get_interface_scope(name, attributes).try(:first) || interface_class(name).new(:managed => false)
         # create or update existing interface
         set_interface(attributes, name, iface)
       end
@@ -238,7 +216,7 @@ module Host
         taxonomy_fact = Setting["#{taxonomy}_fact"]
 
         if taxonomy_fact.present? && facts.keys.include?(taxonomy_fact)
-          taxonomy_from_fact = taxonomy_class.find_by_title(facts[taxonomy_fact])
+          taxonomy_from_fact = taxonomy_class.find_by_title(facts[taxonomy_fact].to_s)
         else
           default_taxonomy = taxonomy_class.find_by_title(Setting["default_#{taxonomy}"])
         end
@@ -335,7 +313,49 @@ module Host
       @old = super { |clone| clone.interfaces = self.interfaces.map {|i| setup_object_clone(i) } }
     end
 
+    def skip_orchestration?
+      false
+    end
+
     private
+
+    def owner_taxonomies_match
+      return true if self.owner.admin?
+
+      if Organization.organizations_enabled && self.organization_id && !self.owner.my_organizations.where(:id => self.organization_id).exists?
+        errors.add :is_owned_by, _("does not belong into host's organization")
+      end
+      if Location.locations_enabled && self.location_id && !self.owner.my_locations.where(:id => self.location_id).exists?
+        errors.add :is_owned_by, _("does not belong into host's location")
+      end
+    end
+
+    def set_default_user
+      self.owner ||= User.current if self.owner_type.nil? && self.owner_id.nil?
+      true
+    end
+
+    def build_values_for_primary_interface!(values_for_primary_interface, args)
+      new_attrs = args.shift
+      unless new_attrs.nil?
+        new_attrs = new_attrs.with_indifferent_access
+        values_for_primary_interface[:name] = NameGenerator.new.next_random_name unless new_attrs.has_key?(:name)
+        PRIMARY_INTERFACE_ATTRIBUTES.each do |attr|
+          values_for_primary_interface[attr] = new_attrs.delete(attr) if new_attrs.has_key?(attr)
+        end
+
+        model_name = new_attrs.delete(:model_name)
+        new_attrs[:hardware_model_name] = model_name if model_name.present?
+
+        args.unshift(new_attrs)
+      end
+    end
+
+    def update_primary_interface_attributes(attrs)
+      attrs.each do |name, value|
+        self.send "#{name}=", value
+      end
+    end
 
     def tax_location
       return nil unless location_id
@@ -375,11 +395,15 @@ module Host
           rescue Net::Validations::Error
             logger.debug "invalid mac during parsing: #{attributes[:macaddress]}"
           end
-          base = base.where(:mac => macaddress)
+
+          mac_based = base.where(:mac => macaddress)
           if attributes[:virtual]
-            base.virtual.where(:identifier => name)
-          else
-            base.physical
+            mac_based.virtual.where(:identifier => name)
+          elsif mac_based.physical.any?
+            mac_based.physical
+          elsif !self.managed
+            #Unmanaged host's interfaces are just used for reporting, so overwrite based on identifier first
+            base.where(:identifier => name)
           end
       end
     end
@@ -398,12 +422,16 @@ module Host
       update_virtuals(iface.identifier_was, name) if iface.identifier_changed? && !iface.virtual? && iface.persisted? && iface.identifier_was.present?
       iface.attrs = attributes
 
-      logger.debug "Saving #{name} NIC for host #{self.name}"
-      result = iface.save
-      result or begin
-        logger.warn "Saving #{name} NIC for host #{self.name} failed, skipping because:"
-        iface.errors.full_messages.each { |e| logger.warn " #{e}"}
-        false
+      if iface.new_record? || iface.changed?
+        logger.debug "Saving #{name} NIC for host #{self.name}"
+        result = iface.save
+
+        unless result
+          logger.warn "Saving #{name} NIC for host #{self.name} failed, skipping because:"
+          iface.errors.full_messages.each { |e| logger.warn " #{e}" }
+        end
+
+        result
       end
     end
 
@@ -498,6 +526,20 @@ module Host
         root_pass == hostgroup.try(:read_attribute, :root_pass)
       else
         true
+      end
+    end
+
+    def validate_owner
+      return true if self.owner_type.nil? && self.owner.nil?
+
+      add_owner_error if self.owner_type.present? && self.owner.nil?
+    end
+
+    def add_owner_error
+      if self.owner_id.present?
+        errors.add(:owner, (_('There is no owner with id %d and type %s') % [self.owner_id, self.owner_type]))
+      else
+        errors.add(:owner, _('If owner type is specified, owner must be specified too.'))
       end
     end
   end

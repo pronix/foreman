@@ -1,5 +1,6 @@
 class FiltersController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
+  include Foreman::Controller::Parameters::Filter
 
   before_action :find_role
   before_action :setup_search_options, :only => :index
@@ -15,7 +16,7 @@ class FiltersController < ApplicationController
   end
 
   def create
-    @filter = Filter.new(params[:filter])
+    @filter = Filter.new(filter_params)
     if @filter.save
       process_success :success_redirect => saved_redirect_url_or(filters_path(:role_id => @role))
     else
@@ -29,7 +30,7 @@ class FiltersController < ApplicationController
 
   def update
     @filter = resource_base.find(params[:id])
-    if @filter.update_attributes(params[:filter])
+    if @filter.update_attributes(filter_params)
       process_success :success_redirect => saved_redirect_url_or(filters_path(:role_id => @role))
     else
       process_error
@@ -45,7 +46,22 @@ class FiltersController < ApplicationController
     end
   end
 
-  protected
+  def disable_overriding
+    @filter = resource_base.find(params[:id])
+    @filter.disable_overriding!
+    process_success :success_msg => _('Filter overriding has been disabled')
+  end
+
+  private
+
+  def action_permission
+    case params[:action]
+      when 'disable_overriding'
+        'edit'
+      else
+        super
+    end
+  end
 
   def find_role
     @role = Role.find_by_id(role_id)

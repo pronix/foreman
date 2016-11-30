@@ -31,6 +31,7 @@ Foreman::Application.routes.draw do
         put 'toggle_manage'
         post 'environment_selected'
         put 'power'
+        get 'power', :to => 'hosts#get_power_state'
         get 'console'
         get 'overview'
         get 'bmc'
@@ -88,6 +89,7 @@ Foreman::Application.routes.draw do
         post 'domain_selected'
         post 'use_image_selected'
         post 'compute_resource_selected'
+        post 'scheduler_hint_selected'
         post 'interfaces'
         post 'medium_selected'
         get  'select_multiple_organization'
@@ -96,6 +98,7 @@ Foreman::Application.routes.draw do
         post 'update_multiple_location'
         get  'rebuild_config'
         post 'submit_rebuild_config'
+        get 'random_name', :only => :new
       end
 
       constraints(:host_id => /[^\/]+/) do
@@ -108,7 +111,12 @@ Foreman::Application.routes.draw do
       end
     end
 
-    resources :bookmarks, :except => [:show]
+    resources :bookmarks, :except => [:show] do
+      collection do
+        get 'auto_complete_search'
+      end
+    end
+
     [:lookup_keys, :variable_lookup_keys, :puppetclass_lookup_keys].each do |key|
       resources key, :except => [:show, :new, :create] do
         resources :lookup_values, :only => [:index, :create, :update, :destroy]
@@ -134,6 +142,11 @@ Foreman::Application.routes.draw do
     end
   end
   resources :common_parameters, :except => [:show] do
+    collection do
+      get 'auto_complete_search'
+    end
+  end
+  resources :parameters, :only => [:index] do
     collection do
       get 'auto_complete_search'
     end
@@ -265,6 +278,7 @@ Foreman::Application.routes.draw do
     resources :roles, :except => [:show] do
       member do
         get 'clone'
+        patch 'disable_filters_overriding'
       end
       collection do
         get 'auto_complete_search'
@@ -272,6 +286,9 @@ Foreman::Application.routes.draw do
     end
 
     resources :filters, :except => [:show] do
+      member do
+        patch 'disable_overriding'
+      end
       collection do
         get 'auto_complete_search'
       end
@@ -307,6 +324,7 @@ Foreman::Application.routes.draw do
           get 'clone_template'
           get 'lock'
           get 'unlock'
+          get 'export'
           post 'preview'
         end
         collection do
@@ -321,6 +339,7 @@ Foreman::Application.routes.draw do
           get 'clone_template'
           get 'lock'
           get 'unlock'
+          get 'export'
           post 'preview'
         end
         collection do
@@ -410,17 +429,18 @@ Foreman::Application.routes.draw do
 
   end
 
-  resources :widgets, :controller => 'dashboard', :only => [:create, :destroy] do
+  resources :widgets, :controller => 'dashboard', :only => [:show, :create, :destroy] do
     collection do
       post 'save_positions', :to => 'dashboard#save_positions'
       put 'reset_default', :to => 'dashboard#reset_default'
     end
   end
 
+  resources :statistics, :only => [:index, :show]
+
   root :to => 'dashboard#index'
   get 'dashboard', :to => 'dashboard#index', :as => "dashboard"
   get 'dashboard/auto_complete_search', :to => 'hosts#auto_complete_search', :as => "auto_complete_search_dashboards"
-  get 'statistics', :to => 'statistics#index', :as => "statistics"
   get 'status', :to => 'home#status', :as => "status"
 
   # get only for alterator unattended scripts
@@ -481,5 +501,9 @@ Foreman::Application.routes.draw do
   resources :about, :only => :index do
   end
 
-  resources :interfaces, :only => :new
+  resources :interfaces, :only => :new do
+    collection do
+      get :random_name
+    end
+  end
 end

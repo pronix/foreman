@@ -11,7 +11,6 @@ module Foreman::Model
 
     alias_attribute :access_key, :user
     alias_attribute :region, :url
-    attr_accessible :access_key, :region
 
     def to_label
       "#{name} (#{region}-#{provider_friendly_name})"
@@ -45,13 +44,14 @@ module Foreman::Model
         args.merge!(:tags => {:Name => name})
       end
       if (image_id = args[:image_id])
-        image = images.find_by_uuid(image_id)
+        image = images.find_by_uuid(image_id.to_s)
         iam_hash = image.iam_role.present? ? {:iam_instance_profile_name => image.iam_role} : {}
         args.merge!(iam_hash)
       end
       args[:groups].reject!(&:empty?) if args.has_key?(:groups)
       args[:security_group_ids].reject!(&:empty?) if args.has_key?(:security_group_ids)
       args[:associate_public_ip] = subnet_implies_is_vpc?(args) && args[:managed_ip] == 'public'
+      args[:private_ip_address] = args[:interfaces_attributes][:"0"][:ip]
       super(args)
     rescue Fog::Errors::Error => e
       Foreman::Logging.exception("Unhandled EC2 error", e)
@@ -75,7 +75,7 @@ module Foreman::Model
 
     def test_connection(options = {})
       super
-      errors[:user].empty? and errors[:password].empty? and regions
+      errors[:user].empty? && errors[:password].empty? && regions
     rescue Fog::Compute::AWS::Error => e
       errors[:base] << e.message
     end

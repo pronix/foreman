@@ -4,8 +4,6 @@ class Filter < ActiveRecord::Base
 
   attr_writer :resource_type
   attr_accessor :unlimited
-  attr_accessible :search, :unlimited, :resource_type, :permissions,
-    :permission_ids, :permission_names, :role_id, :taxonomy_search
 
   class ScopedSearchValidator < ActiveModel::Validator
     def validate(record)
@@ -48,6 +46,7 @@ class Filter < ActiveRecord::Base
   scope :limited, -> { where("search IS NOT NULL OR taxonomy_search IS NOT NULL") }
 
   scoped_search :on => :search, :complete_value => true
+  scoped_search :on => :override, :complete_value => { :true => true, :false => false }
   scoped_search :on => :limited, :complete_value => { :true => true, :false => false }, :ext_method => :search_by_limited, :only_explicit => true
   scoped_search :on => :unlimited, :complete_value => { :true => true, :false => false }, :ext_method => :search_by_unlimited, :only_explicit => true
   scoped_search :in => :role, :on => :id, :rename => :role_id, :complete_enabled => false, :only_explicit => true
@@ -55,7 +54,8 @@ class Filter < ActiveRecord::Base
   scoped_search :in => :permissions, :on => :resource_type, :rename => :resource
   scoped_search :in => :permissions, :on => :name,          :rename => :permission
 
-  before_validation :build_taxonomy_search, :nilify_empty_searches
+  before_validation :build_taxonomy_search, :nilify_empty_searches, :enforce_override_flag
+  before_save :enforce_inherited_taxonomies
 
   validates :search, :presence => true, :unless => Proc.new { |o| o.search.nil? }
   validates_with ScopedSearchValidator
@@ -69,7 +69,7 @@ class Filter < ActiveRecord::Base
   def self.search_by_limited(key, operator, value)
     value      = value == 'true'
     value      = !value if operator == '<>'
-    conditions = value ? limited.where_values.join(' AND ') : unlimited.where_values.map(&:to_sql).join(' AND ')
+    conditions = value ? 'search IS NOT NULL OR taxonomy_search IS NOT NULL' : 'search IS NULL AND taxonomy_search IS NULL'
     { :conditions => conditions }
   end
 
@@ -98,7 +98,7 @@ class Filter < ActiveRecord::Base
   end
 
   def resource_type
-    type = @resource_type || permissions.first.try(:resource_type)
+    type = @resource_type || filterings.first.try(:permission).try(:resource_type)
     type.blank? ? nil : type
   end
 
@@ -114,6 +114,10 @@ class Filter < ActiveRecord::Base
       return true if resource_type == 'Host'
       resource_class.included_modules.include?(Authorizable) && resource_class.respond_to?(:search_for)
     end
+  end
+
+  def allows_taxonomies_filtering?
+    allows_organization_filtering? || allows_location_filtering?
   end
 
   def allows_organization_filtering?
@@ -135,6 +139,21 @@ class Filter < ActiveRecord::Base
   def expire_topbar_cache(sweeper)
     role.users.each      { |u| u.expire_topbar_cache(sweeper) }
     role.usergroups.each { |g| g.expire_topbar_cache(sweeper) }
+  end
+
+  def disable_overriding!
+    self.override = false
+    self.save!
+  end
+
+  def enforce_inherited_taxonomies
+    inherit_taxonomies! unless self.override?
+  end
+
+  def inherit_taxonomies!
+    self.organization_ids = self.role.organization_ids if self.allows_organization_filtering?
+    self.location_ids = self.role.location_ids if self.allows_location_filtering?
+    build_taxonomy_search
   end
 
   private
@@ -191,5 +210,10 @@ class Filter < ActiveRecord::Base
     if self.location_ids.present? && !self.allows_location_filtering?
       errors.add(:location_ids, _('You can\'t assign locations to this resource'))
     end
+  end
+
+  def enforce_override_flag
+    self.override = false unless self.allows_taxonomies_filtering?
+    true
   end
 end

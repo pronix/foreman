@@ -19,7 +19,7 @@ module Api::V2::TaxonomiesController
       param :user_ids, Array, N_("User IDs"), :required => false
       param :smart_proxy_ids, Array, N_("Smart proxy IDs"), :required => false
       param :compute_resource_ids, Array, N_("Compute resource IDs"), :required => false
-      param :media_ids, Array, N_("Media IDs"), :required => false
+      param :medium_ids, Array, N_("Medium IDs"), :required => false
       param :config_template_ids, Array, N_("Provisioning template IDs"), :required => false # FIXME: deprecated
       param :ptable_ids, Array, N_("Partition template IDs"), :required => false
       param :provisioning_template_ids, Array, N_("Provisioning template IDs"), :required => false
@@ -29,19 +29,20 @@ module Api::V2::TaxonomiesController
       param :environment_ids, Array, N_("Environment IDs"), :required => false
       param :subnet_ids, Array, N_("Subnet IDs"), :required => false
       param :parent_id, :number, :desc => N_('Parent ID'), :required => false
+      param :ignore_types, Array, N_("List of resources types that will be automatically associated"), :required => false
     end
   end
 
   api :GET, '/:resource_id', N_('List all :resource_id')
   param_group :search_and_pagination, ::Api::V2::BaseController
   def index
-    if @nested_obj
-      @taxonomies = @nested_obj.send(taxonomies_plural).send(:completer_scope, :controller => taxonomies_plural).search_for(*search_options).paginate(paginate_options)
-      @total = @nested_obj.send(taxonomies_plural).send(:completer_scope, :controller => taxonomies_plural).count
-    else
-      @taxonomies = taxonomy_class.send("my_#{taxonomies_plural}").search_for(*search_options).paginate(paginate_options)
-      @total = taxonomy_class.send("my_#{taxonomies_plural}").count
-    end
+    taxonomy_scope = if @nested_obj
+                       taxonomy_class.where(:id => @nested_obj.send("#{taxonomy_single}_ids"))
+                     else
+                       taxonomy_class
+                     end
+    @taxonomies = taxonomy_scope.send("my_#{taxonomies_plural}").search_for(*search_options).paginate(paginate_options)
+    @total = taxonomy_scope.send("my_#{taxonomies_plural}").count
     instance_variable_set("@#{taxonomies_plural}", @taxonomies)
 
     @render_template ||= 'api/v2/taxonomies/index'
@@ -57,7 +58,7 @@ module Api::V2::TaxonomiesController
   api :POST, '/:resource_id', N_('Create :a_resource')
   param_group :resource, :as => :create
   def create
-    @taxonomy = taxonomy_class.new(params[taxonomy_single])
+    @taxonomy = taxonomy_class.new(resource_params)
     instance_variable_set("@#{taxonomy_single}", @taxonomy)
     process_response @taxonomy.save
   end
@@ -68,7 +69,7 @@ module Api::V2::TaxonomiesController
     # NOTE - if not ! and invalid, the error is undefined method `permission_failed?' for #<Location:0x7fe38c1d3ec8> (NoMethodError)
     # removed process_response & added explicit render 'api/v2/taxonomies/update'.  Otherwise, *_ids are not returned
 
-    process_response @taxonomy.update_attributes(params[taxonomy_single])
+    process_response @taxonomy.update_attributes(resource_params)
   end
 
   api :DELETE, '/:resource_id/:id', N_('Delete :a_resource')
@@ -123,5 +124,9 @@ module Api::V2::TaxonomiesController
 
   def allowed_nested_id
     %w(domain_id compute_resource_id subnet_id environment_id hostgroup_id smart_proxy_id user_id medium_id organization_id location_id filter_id)
+  end
+
+  def resource_params
+    public_send("#{taxonomy_single}_params".to_sym)
   end
 end

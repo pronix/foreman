@@ -1,6 +1,7 @@
 class Host::Managed < Host::Base
   include Hostext::PowerInterface
   include Hostext::Search
+  include Hostext::SmartProxy
   include Hostext::Token
   include SelectiveClone
   include HostParams
@@ -12,7 +13,6 @@ class Host::Managed < Host::Base
   has_many :reports, :foreign_key => :host_id, :class_name => 'ConfigReport'
   has_one :last_report_object, -> { order("#{Report.table_name}.id DESC") }, :foreign_key => :host_id, :class_name => 'ConfigReport'
 
-  belongs_to :owner, :polymorphic => true
   belongs_to :compute_resource
   belongs_to :image
   has_many :host_statuses, :class_name => 'HostStatus::Status', :foreign_key => 'host_id', :inverse_of => :host, :dependent => :destroy
@@ -41,30 +41,29 @@ class Host::Managed < Host::Base
   before_save :clear_data_on_build
   before_save :clear_puppetinfo, :if => :environment_id_changed?
 
-  def initialize(attributes = nil, options = {})
-    attributes = apply_inherited_attributes(attributes, false)
-    super(attributes, options)
+  include PxeLoaderValidator
+
+  def initialize(*args)
+    args.unshift(apply_inherited_attributes(args.shift, false))
+    super(*args)
   end
 
   def build_hooks
     return unless respond_to?(:old) && old && (build? != old.build?)
     if build?
       run_callbacks :build do
-        logger.debug { "custom hook after_build on #{name} will be executed if defined." }
+        logger.debug "custom hook after_build on #{name} will be executed if defined."
+        true
       end
     else
       run_callbacks :provision do
-        logger.debug { "custom hook before_provision on #{name} will be executed if defined." }
+        logger.debug "custom hook before_provision on #{name} will be executed if defined."
+        true
       end
     end
   end
 
   include HostCommon
-  attr_accessible :build, :certname, :disk, :global_status,
-    :installed_at, :last_report, :otp, :provision_method, :uuid,
-    :compute_attributes,
-    :compute_resource, :compute_resource_id, :compute_resource_name,
-    :owner, :owner_id, :owner_name, :owner_type
 
   class Jail < ::Safemode::Jail
     allow :name, :diskLayout, :puppetmaster, :puppet_ca_server, :operatingsystem, :os, :environment, :ptable, :hostgroup,
@@ -151,7 +150,7 @@ class Host::Managed < Host::Base
   scope :with_compute_resource, -> { where.not(:compute_resource_id => nil, :uuid => nil) }
 
   # audit the changes to this model
-  audited :except => [:last_report, :last_compile, :lookup_value_matcher], :allow_mass_assignment => true
+  audited :except => [:last_report, :last_compile, :lookup_value_matcher]
   has_associated_audits
   #redefine audits relation because of the type change (by default the relation will look for auditable_type = 'Host::Managed')
   has_many :audits, -> { where(:auditable_type => 'Host') }, :foreign_key => :auditable_id,
@@ -162,8 +161,8 @@ class Host::Managed < Host::Base
   alias_attribute :arch, :architecture
 
   validates :environment_id, :presence => true, :unless => Proc.new { |host| host.puppet_proxy_id.blank? }
-  validates :organization_id, :presence => true, :if => Proc.new {|host| host.managed? && SETTINGS[:organizations_enabled] }
-  validates :location_id,     :presence => true, :if => Proc.new {|host| host.managed? && SETTINGS[:locations_enabled] }
+  validates :organization_id, :presence => true, :if => Proc.new { |host| host.managed? && SETTINGS[:organizations_enabled] }
+  validates :location_id,     :presence => true, :if => Proc.new { |host| host.managed? && SETTINGS[:locations_enabled] }
 
   if SETTINGS[:unattended]
     # handles all orchestration of smart proxies.
@@ -173,10 +172,12 @@ class Host::Managed < Host::Base
     delegate :dhcp?, :dhcp_record, :to => :primary_interface
     # DNS orchestration delegation
     delegate :dns?, :dns6?, :reverse_dns?, :reverse_dns6?, :dns_record, :to => :primary_interface
+    # IP delegation
+    delegate :mac_based_ipam?, :required_ip_addresses_set?, :compute_provides_ip?, :ip_available?, :ip6_available?, :to => :primary_interface
     include Orchestration::Compute
     include Rails.application.routes.url_helpers
     # TFTP orchestration delegation
-    delegate :tftp?, :tftp, :generate_pxe_template, :to => :provision_interface
+    delegate :tftp?, :tftp6?, :tftp, :tftp6, :generate_pxe_template, :to => :provision_interface
     include Orchestration::Puppetca
     include Orchestration::SSHProvision
     include Orchestration::Realm
@@ -188,7 +189,7 @@ class Host::Managed < Host::Base
                           :presence => {:message => N_('should not be blank - consider setting a global or host group default')},
                           :if => Proc.new { |host| host.managed && host.pxe_build? && build? }
     validates :ptable_id, :presence => {:message => N_("can't be blank unless a custom partition has been defined")},
-                          :if => Proc.new { |host| host.managed and host.disk.empty? and !Foreman.in_rake? and host.pxe_build? and host.build? }
+                          :if => Proc.new { |host| host.managed && host.disk.empty? && !Foreman.in_rake? && host.pxe_build? && host.build? }
     validates :provision_method, :inclusion => {:in => Proc.new { self.provision_methods }, :message => N_('is unknown')}, :if => Proc.new {|host| host.managed?}
     validates :medium_id, :presence => true, :if => Proc.new { |host| host.validate_media? }
     validate :provision_method_in_capabilities
@@ -210,8 +211,8 @@ class Host::Managed < Host::Base
   end
 
   before_validation :set_hostgroup_defaults, :set_ip_address
-  after_validation :ensure_associations, :set_default_user
-  before_validation :set_certname, :if => Proc.new {|h| h.managed? and Setting[:use_uuid_for_certificates] } if SETTINGS[:unattended]
+  after_validation :ensure_associations
+  before_validation :set_certname, :if => Proc.new {|h| h.managed? && Setting[:use_uuid_for_certificates] } if SETTINGS[:unattended]
   after_validation :trigger_nic_orchestration, :if => Proc.new { |h| h.managed? && h.changed? }, :on => :update
   before_validation :validate_dns_name_uniqueness
 
@@ -302,10 +303,10 @@ class Host::Managed < Host::Base
   def import_facts(facts)
     # Facts come from 'existing' attributes/infrastructure. We skip triggering
     # the orchestration of this infrastructure when we create a host this way.
-    skip_orchestration!
+    skip_orchestration! if SETTINGS[:unattended]
     super(facts)
   ensure
-    enable_orchestration!
+    enable_orchestration! if SETTINGS[:unattended]
   end
 
   # Request a new OTP for a host
@@ -337,7 +338,9 @@ class Host::Managed < Host::Base
     opts[:hostgroup_id]       ||= hostgroup_id
     opts[:environment_id]     ||= environment_id
 
-    ProvisioningTemplate.find_template opts
+    Taxonomy.as_taxonomy(self.organization, self.location) do
+      ProvisioningTemplate.find_template opts
+    end
   end
 
   # reports methods
@@ -389,10 +392,12 @@ class Host::Managed < Host::Base
     param["realm"]        = realm.name unless realm.nil?
     param["hostgroup"]    = hostgroup.to_label unless hostgroup.nil?
     if SETTINGS[:locations_enabled]
-      param["location"] = location.title unless location.blank?
+      param["location"] = location.name unless location.blank?
+      param["location_title"] = location.title unless location.blank?
     end
     if SETTINGS[:organizations_enabled]
-      param["organization"] = organization.title unless organization.blank?
+      param["organization"] = organization.name unless organization.blank?
+      param["organization_title"] = organization.title unless organization.blank?
     end
     if SETTINGS[:unattended]
       param["root_pw"]      = root_pass unless (!operatingsystem.nil? && operatingsystem.password_hash == 'Base64')
@@ -429,6 +434,8 @@ class Host::Managed < Host::Base
     info_hash['classes'] = classes
     info_hash['parameters'] = param
     info_hash['environment'] = param["foreman_env"] if Setting["enc_environment"] && param["foreman_env"]
+
+    info_hash['foreman_config_groups'] = (config_groups + parent_config_groups).uniq.map(&:name)
 
     info_hash
   end
@@ -486,8 +493,10 @@ class Host::Managed < Host::Base
   def importNode(nodeinfo)
     myklasses= []
     # puppet classes
-    nodeinfo["classes"].each do |klass|
-      if (pc = Puppetclass.find_by_name(klass))
+    classes = nodeinfo["classes"]
+    classes = classes.keys if classes.is_a?(Hash)
+    classes.each do |klass|
+      if (pc = Puppetclass.find_by_name(klass.to_s))
         myklasses << pc
       else
         error = _("Failed to import %{klass} for %{name}: doesn't exists in our database - ignoring") % { :klass => klass, :name => name }
@@ -564,11 +573,11 @@ class Host::Managed < Host::Base
   end
 
   def can_be_built?
-    managed? and SETTINGS[:unattended] and pxe_build? and !build?
+    managed? && SETTINGS[:unattended] && pxe_build? && !build?
   end
 
   def jumpstart?
-    operatingsystem.family == "Solaris" and architecture.name =~/Sparc/i rescue false
+    operatingsystem.family == "Solaris" && architecture.name =~/Sparc/i rescue false
   end
 
   def hostgroup_inherited_attributes
@@ -602,24 +611,30 @@ class Host::Managed < Host::Base
 
   def hash_clone(value)
     if value.is_a? Hash
-      hash_type = value.class
-      return hash_type[value.map{ |k, v| [k, hash_clone(v)] }]
+      # Prefer dup to constructing a new object to perserve permitted state
+      # when `value` is an ActionController::Parameters instance
+      new_hash = value.dup
+      new_hash.each { |k, v| new_hash[k] = hash_clone(v) }
+      return new_hash
     end
 
     value
   end
 
-  def set_hostgroup_defaults
+  def set_hostgroup_defaults(force = false)
     return unless hostgroup
-    assign_hostgroup_attributes(%w{domain_id})
+    assign_hostgroup_attributes(inherited_attributes, force)
+  end
 
-    if SETTINGS[:unattended] && (new_record? || managed?)
-      inherited_attributes = %w{operatingsystem_id architecture_id}
-      inherited_attributes << "subnet_id" unless compute_provides?(:ip)
-      inherited_attributes << "subnet6_id" unless compute_provides?(:ip6)
-      inherited_attributes.concat(%w{medium_id ptable_id}) if pxe_build?
-      assign_hostgroup_attributes(inherited_attributes)
+  def inherited_attributes
+    inherited_attrs = %w{domain_id}
+    if SETTINGS[:unattended]
+      inherited_attrs.concat(%w{operatingsystem_id architecture_id})
+      inherited_attrs << "subnet_id" unless compute_provides?(:ip)
+      inherited_attrs << "subnet6_id" unless compute_provides?(:ip6)
+      inherited_attrs.concat(%w{medium_id ptable_id pxe_loader}) if pxe_build?
     end
+    inherited_attrs
   end
 
   def set_compute_attributes
@@ -628,9 +643,10 @@ class Host::Managed < Host::Base
   end
 
   def set_ip_address
-    if SETTINGS[:unattended] && (new_record? || managed?)
-      self.ip  ||= subnet.unused_ip.suggest_ip if subnet.present?
-      self.ip6 ||= subnet6.unused_ip.suggest_ip if subnet6.present?
+    return unless SETTINGS[:unattended] && (new_record? || managed?)
+    self.interfaces.select { |nic| nic.managed }.each do |nic|
+      nic.ip  = nic.subnet.unused_ip(mac).suggest_ip if nic.subnet.present? && nic.ip.blank?
+      nic.ip6 = nic.subnet6.unused_ip(mac).suggest_ip if nic.subnet6.present? && nic.ip6.blank?
     end
   end
 
@@ -702,9 +718,7 @@ class Host::Managed < Host::Base
     # do not copy system specific attributes
     host = self.selective_clone
 
-    self.interfaces.each do |nic|
-      host.interfaces << nic.clone
-    end
+    host.interfaces = self.interfaces.map(&:clone)
     if self.compute_resource
       host.compute_attributes = host.compute_resource.vm_compute_attributes_for(self.uuid)
     end
@@ -740,32 +754,6 @@ class Host::Managed < Host::Base
     compute_resource ? compute_resource.vm_compute_attributes_for(uuid) : nil
   end
 
-  def smart_proxies
-    SmartProxy.where(:id => smart_proxy_ids)
-  end
-
-  def smart_proxy_ids
-    ids = []
-    [subnet, hostgroup.try(:subnet), subnet6, hostgroup.try(:subnet6)].compact.each do |s|
-      ids << s.dhcp_id
-      ids << s.tftp_id
-      ids << s.dns_id
-    end
-
-    [domain, hostgroup.try(:domain)].compact.each do |d|
-      ids << d.dns_id
-    end
-
-    [realm, hostgroup.try(:realm)].compact.each do |r|
-      ids << r.realm_proxy_id
-    end
-
-    [puppet_proxy_id, puppet_ca_proxy_id, hostgroup.try(:puppet_proxy_id), hostgroup.try(:puppet_ca_proxy_id)].compact.each do |p|
-      ids << p
-    end
-    ids.uniq.compact
-  end
-
   def bmc_proxy
     @bmc_proxy ||= bmc_nic.proxy
   end
@@ -773,10 +761,12 @@ class Host::Managed < Host::Base
   def bmc_available?
     ipmi = bmc_nic
     return false if ipmi.nil?
-    ipmi.password.present? && ipmi.username.present? && ipmi.provider == 'IPMI'
+    (ipmi.password.present? && ipmi.username.present? && ipmi.provider == 'IPMI') || ipmi.provider == 'SSH'
   end
 
   def ipmi_boot(booting_device)
+    raise Foreman::Exception.new(
+      _("No BMC NIC available for host %s") % self) unless bmc_available?
     bmc_proxy.boot({:function => 'bootdevice', :device => booting_device})
   end
 
@@ -843,7 +833,7 @@ class Host::Managed < Host::Base
 
   def refresh_global_status!
     refresh_global_status
-    save!
+    save!(:validate => false)
   end
 
   def refresh_statuses
@@ -957,12 +947,16 @@ class Host::Managed < Host::Base
     Classification::ClassParam.new(:host => self).enc
   end
 
-  def assign_hostgroup_attributes(attrs = [])
+  def assign_hostgroup_attributes(attrs = [], force = false)
     attrs.each do |attr|
       next if send(attr).to_i == -1
       value = hostgroup.send("inherited_#{attr}")
-      self.send("#{attr}=", value) unless send(attr).present?
+      assign_hostgroup_attribute attr, value, force
     end
+  end
+
+  def assign_hostgroup_attribute(attr, value, force)
+    self.send("#{attr}=", value) if force || !send(attr).present?
   end
 
   # checks if the host association is a valid association for this host
@@ -984,12 +978,6 @@ class Host::Managed < Host::Base
       end
     end if environment
     status
-  end
-
-  def set_default_user
-    return if self.owner_type.present? && !OWNER_TYPES.include?(self.owner_type)
-    self.owner_type ||= 'User'
-    self.owner ||= User.current
   end
 
   def set_certname

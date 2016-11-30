@@ -118,7 +118,7 @@ class ActiveRecord::Base
     # Foreman.in_rake? prevents the failure of db:migrate for postgresql
     # don't query settings table if in rake
     return 20 if Foreman.in_rake?
-    Setting.entries_per_page rescue 20
+    Setting[:entries_per_page] rescue 20
   end
 
   def self.audited(*args)
@@ -140,18 +140,19 @@ class String
   end
 
   def to_gb
-    begin
-      value, _, unit=self.match(/(\d+(\.\d+)?) ?(([KMGT]i?B?|B))$/i)[1..3]
-      case unit.to_sym
-      when nil, :B, :byte then (value.to_f / Foreman::SIZE[:giga])
-      when :TB, :TiB, :T, :terabyte      then (value.to_f * Foreman::SIZE[:kilo])
-      when :GB, :GiB, :G, :gigabyte      then value.to_f
-      when :MB, :MiB, :M, :megabyte      then (value.to_f / Foreman::SIZE[:kilo])
-      when :KB, :KiB, :K, :kilobyte, :kB then (value.to_f / Foreman::SIZE[:mega])
-      else raise "Unknown unit: #{unit.inspect}!"
-      end
-    rescue
+    match_data = self.match(/^(\d+(\.\d+)?) ?(([KMGT]i?B?|B|Bytes))$/i)
+    if match_data.present?
+      value, _, unit = match_data[1..3]
+    else
       raise "Unknown string: #{self.inspect}!"
+    end
+    case unit.downcase.to_sym
+    when nil, :b, :byte, :bytes then (value.to_f / 1.gigabyte)
+    when :tb, :tib, :t, :terabyte then (value.to_f * 1.kilobyte)
+    when :gb, :gib, :g, :gigabyte then value.to_f
+    when :mb, :mib, :m, :megabyte then (value.to_f / 1.kilobyte)
+    when :kb, :kib, :k, :kilobyte then (value.to_f / 1.megabyte)
+    else raise "Unknown unit: #{unit.inspect}!"
     end
   end
 

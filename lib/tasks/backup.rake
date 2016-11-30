@@ -81,6 +81,11 @@ END_DESC
     config = Rails.configuration.database_configuration[Rails.env]
 
     puts "Your backup is going to be imported from: #{ENV['file']}"
+    puts "You can backup the old database '#{config['database']}' by running:"
+    puts " - foreman-rake db:dump destination=/mydir/dumps/foreman.sql RAILS_ENV=#{Rails.env}"
+    puts "This task will destroy your old database tables! Are you sure you want to continue? [y/N]"
+    input = STDIN.gets.chomp
+    abort("Bye!") unless input.downcase == "y"
     case config['adapter']
     when 'mysql', 'mysql2'
       mysql_import(ENV['file'], config)
@@ -105,7 +110,7 @@ END_DESC
   end
 
   def postgres_import(file, config)
-    cmd = "pg_restore -d #{config['database']} -U #{config['username']} "
+    cmd = "pg_restore -d #{config['database']} -U #{config['username']} --clean"
     cmd += " -h #{config['host']} " if config['host'].present?
     cmd += " -p #{config['port']} " if config['port'].present?
     cmd += " #{file}"

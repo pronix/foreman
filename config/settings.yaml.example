@@ -17,6 +17,15 @@
 # Mark translated strings with X characters (for developers)
 :mark_translated: false
 
+# Use the webpack development server? set to false to disable (for developers)
+# Make sure to run `rake webpack:compile` if disabled.
+:webpack_dev_server: true
+
+# If you run Foreman in development behind some proxy or use HTTPS you need
+# to enable HTTPS for webpack dev server too, otherwise you'd get mixed content
+# errors in your browser
+:webpack_dev_server_https: false
+
 # Local administrative settings for application domain, fqdn, foreman URL,
 # administrator email address etc. If you don't have a Puppet provisioning
 # system you may want to change to setup your project on your local machine.
@@ -24,13 +33,18 @@
 :fqdn: 'localhost.localdomain.net'
 
 # Log settings for the current environment can be adjusted by adding them
-# here. For example, if you want to increase the log level.
+# here. It is also possible to override settings per environment. See
+# logging.yaml for more details and examples.
 #:logging:
 #  :level: debug
+#  :production:
+#    :type: syslog
 
 # Individual logging types can be toggled on/off here
 #:loggers:
 #  :app:
+#    :enabled: true
+#  :audit:
 #    :enabled: true
 #  :ldap:
 #    :enabled: false
@@ -38,3 +52,5 @@
 #    :enabled: false
 #  :sql:
 #    :enabled: false
+#  :templates:
+#    :enabled: true

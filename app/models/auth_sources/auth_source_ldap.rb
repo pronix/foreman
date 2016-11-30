@@ -27,10 +27,7 @@ class AuthSourceLdap < AuthSource
   include Parameterizable::ByIdName
   include Encryptable
   encrypts :account_password
-
-  attr_accessible :account_password, :usergroup_sync, :base_dn, :groups_base,
-    :ldap_filter,:attr_login, :attr_firstname, :attr_lastname, :attr_mail,
-    :attr_photo, :host, :tls, :port, :server_type, :account
+  include Taxonomix
 
   validates :host, :presence => true, :length => {:maximum => 60}
   validates :attr_login, :attr_firstname, :attr_lastname, :attr_mail, :presence => true, :if => Proc.new { |auth| auth.onthefly_register? }
@@ -42,6 +39,14 @@ class AuthSourceLdap < AuthSource
 
   before_validation :strip_ldap_attributes
   after_initialize :set_defaults
+
+  scoped_search :on => :name, :complete_value => :true
+
+  default_scope lambda {
+    with_taxonomy_scope do
+      order("#{AuthSourceLdap.table_name}.name")
+    end
+  }
 
   DEFAULT_PORTS = {:ldap => 389, :ldaps => 636 }
   # Loads the LDAP info for a user and authenticates the user with their password
@@ -145,7 +150,7 @@ class AuthSourceLdap < AuthSource
       end
       result[:success] = true
       result[:message] = _("Test connection to LDAP server was successful.")
-    rescue Timeout::Error, Net::LDAP::Error, StandardError => exception
+    rescue StandardError => exception
       raise ::Foreman::WrappedException.new exception, N_("Unable to connect to LDAP server")
     end
     result

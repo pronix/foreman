@@ -1,6 +1,8 @@
 module Api
   module V1
     class HostgroupsController < V1::BaseController
+      include Foreman::Controller::Parameters::Hostgroup
+
       before_action :find_resource, :only => %w{show update destroy}
 
       api :GET, "/hostgroups/", "List all hostgroups."
@@ -38,7 +40,7 @@ module Api
       end
 
       def create
-        @hostgroup = Hostgroup.new(params[:hostgroup])
+        @hostgroup = Hostgroup.new(hostgroup_params)
         process_response @hostgroup.save
       end
 
@@ -51,6 +53,7 @@ module Api
         param :operatingsystem_id, :number
         param :architecture_id, :number
         param :medium_id, :number
+        param :pxe_loader, Operatingsystem.all_loaders, :desc => N_("DHCP filename option")
         param :ptable_id, :number
         param :puppet_ca_proxy_id, :number
         param :subnet_id, :number
@@ -59,7 +62,7 @@ module Api
       end
 
       def update
-        process_response @hostgroup.update_attributes(params[:hostgroup])
+        process_response @hostgroup.update_attributes(hostgroup_params)
       end
 
       api :DELETE, "/hostgroups/:id/", "Delete an hostgroup."

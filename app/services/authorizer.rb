@@ -11,10 +11,11 @@ class Authorizer
   end
 
   def can?(permission, subject = nil, cache = true)
+    return true if user.admin?
+
     if subject.nil?
       user.permissions.where(:name => permission).present?
     else
-      return true if user.admin?
       return collection_cache_lookup(subject, permission) if cache
 
       find_collection(subject.class, :permission => permission).
@@ -43,7 +44,7 @@ class Authorizer
                                                             *values]).uniq
     end
 
-    all_filters = all_filters.to_a # load all records, so #empty? does not call extra COUNT(*) query
+    all_filters = all_filters.reorder(nil).to_a # load all records, so #empty? does not call extra COUNT(*) query
     Foreman::Logging.logger('permissions').debug do
       all_filters.map do |f|
         "filter with role_id: #{f.role_id} limited: #{f.limited?} search: #{f.search} taxonomy_search: #{f.taxonomy_search}"
@@ -164,7 +165,8 @@ class Authorizer
   def resource_name(klass)
     return 'Operatingsystem' if klass <= Operatingsystem
     return 'ComputeResource' if klass <= ComputeResource
-    return 'Parameter' if klass <= Parameter && !(klass <= CommonParameter)
+    return 'Subnet' if klass <= Subnet
+    return 'Parameter' if klass <= Parameter
 
     case (name = klass.to_s)
     when 'Audited::Adapters::ActiveRecord::Audit'

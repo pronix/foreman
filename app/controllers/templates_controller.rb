@@ -4,14 +4,14 @@ class TemplatesController < ApplicationController
   include Foreman::Controller::AutoCompleteSearch
 
   before_action :handle_template_upload, :only => [:create, :update]
-  before_action :find_resource, :only => [:edit, :update, :destroy, :clone_template, :lock, :unlock]
+  before_action :find_resource, :only => [:edit, :update, :destroy, :clone_template, :lock, :unlock, :export]
   before_action :load_history, :only => :edit
   before_action :type_name_plural, :type_name_singular, :resource_class
 
   include TemplatePathsHelper
 
   def index
-    @templates = resource_base.search_for(params[:search], :order => params[:order]).paginate(:page => params[:page])
+    @templates = resource_base_search_and_page
     @templates = @templates.includes(resource_base.template_includes)
   end
 
@@ -40,7 +40,7 @@ class TemplatesController < ApplicationController
   end
 
   def create
-    @template = resource_class.new(params[type_name_singular])
+    @template = resource_class.new(resource_params)
     if @template.save
       process_success :object => @template
     else
@@ -53,7 +53,7 @@ class TemplatesController < ApplicationController
   end
 
   def update
-    if @template.update_attributes(params[type_name_singular])
+    if @template.update_attributes(resource_params)
       process_success :object => @template
     else
       load_history
@@ -95,17 +95,19 @@ class TemplatesController < ApplicationController
     safe_render(@template)
   end
 
+  def export
+    send_data @template.to_erb, :type => 'text/plain', :disposition => 'attachment', :filename => @template.filename
+  end
+
   private
 
   def safe_render(template)
-    begin
-      load_template_vars
-      render :text => unattended_render(template)
-    rescue => error
-      Foreman::Logging.exception("Error rendering the #{template.name} template", error)
-      render :text => _("There was an error rendering the %{name} template: %{error}") % {:name => template.name, :error => error.message},
-             :status => :internal_server_error
-    end
+    load_template_vars
+    render :text => unattended_render(template)
+  rescue => error
+    Foreman::Logging.exception("Error rendering the #{template.name} template", error)
+    render :text => _("There was an error rendering the %{name} template: %{error}") % {:name => template.name, :error => error.message},
+           :status => :internal_server_error
   end
 
   def set_locked(locked)
@@ -119,14 +121,14 @@ class TemplatesController < ApplicationController
 
   def load_history
     return unless @template
-    @history = Audit.descending.where(:auditable_id => @template.id, :auditable_type => @template.class, :action => 'update')
+    @history = Audit.descending.where(:auditable_id => @template.id, :auditable_type => @template.class.base_class, :action => 'update')
   end
 
   def action_permission
     case params[:action]
       when 'lock', 'unlock'
         :lock
-      when 'clone_template', 'preview'
+      when 'clone_template', 'preview', 'export'
         :view
       else
         super
@@ -143,5 +145,9 @@ class TemplatesController < ApplicationController
 
   def type_name_plural
     @type_name_plural ||= type_name_singular.pluralize
+  end
+
+  def resource_params
+    public_send "#{type_name_singular}_params".to_sym
   end
 end

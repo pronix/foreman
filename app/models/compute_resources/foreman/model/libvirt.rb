@@ -7,8 +7,6 @@ module Foreman::Model
     validates :url, :format => { :with => URI.regexp }
     validates :display_type, :inclusion => { :in => ALLOWED_DISPLAY_TYPES }
 
-    attr_accessible :display_type, :uuid
-
     def self.available?
       Fog::Compute.providers.include?(:libvirt)
     end
@@ -35,7 +33,7 @@ module Foreman::Model
     end
 
     def editable_network_interfaces?
-      interfaces.any? or networks.any?
+      interfaces.any? || networks.any?
     end
 
     def find_vm_by_uuid(uuid)
@@ -60,17 +58,18 @@ module Foreman::Model
       hypervisor.cpus
     end
 
-    # libvirt reports in KB
+    # returns available memory for VM in bytes
     def max_memory
-      hypervisor.memory * Foreman::SIZE[:kilo]
+      # libvirt reports in KB
+      hypervisor.memory.kilobyte
     rescue => e
       logger.debug "unable to figure out free memory, guessing instead due to:#{e}"
-      16*Foreman::SIZE[:giga]
+      16.gigabytes
     end
 
     def test_connection(options = {})
       super
-      errors[:url].empty? and hypervisor
+      errors[:url].empty? && hypervisor
     rescue => e
       disconnect rescue nil
       errors[:base] << e.message
@@ -209,7 +208,7 @@ module Foreman::Model
 
     def vm_instance_defaults
       super.merge(
-        :memory     => 768*Foreman::SIZE[:mega],
+        :memory     => 768.megabytes,
         :nics       => [new_nic],
         :volumes    => [new_volume],
         :display    => { :type     => display_type,

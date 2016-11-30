@@ -4,16 +4,9 @@ require 'uri'
 class Operatingsystem < ActiveRecord::Base
   include Authorizable
   include ValidateOsFamily
+  include PxeLoaderSupport
   extend FriendlyId
   friendly_id :title
-
-  attr_accessible :name, :major, :minor, :description, :family, :to_label,
-      :release_name, :password_hash,
-      :architectures, :architecture_ids, :architecture_names,
-      :medium_ids, :medium_names,
-      :os_default_templates_attributes, :os_parameters_attributes,
-      :provisioning_templates, :provisioning_template_names, :provisioning_template_ids,
-      :ptable_ids, :ptable_names
 
   validates_lengths_from_database
   before_destroy EnsureNotUsedBy.new(:hosts, :hostgroups)
@@ -47,7 +40,7 @@ class Operatingsystem < ActiveRecord::Base
 
   before_save :set_family
 
-  audited :allow_mass_assignment => true
+  audited
   default_scope -> { order(:title) }
 
   scoped_search :on => :name,        :complete_value => :true
@@ -78,7 +71,21 @@ class Operatingsystem < ActiveRecord::Base
                'Xenserver' => %r{XenServer}i }
 
   class Jail < Safemode::Jail
-    allow :name, :media_url, :major, :minor, :family, :to_s, :repos, :==, :release_name, :kernel, :initrd, :pxe_type, :medium_uri, :boot_files_uri
+    allow :name, :media_url, :major, :minor, :family, :to_s, :repos, :==, :release_name, :kernel, :initrd, :pxe_type, :medium_uri, :boot_files_uri, :password_hash
+  end
+
+  def self.inherited(child)
+    child.instance_eval do
+      # Ensure all subclasses behave in the same way as the parent, and remain
+      # identified as Operatingsystems instead of subclasses in UI paths etc.
+      #
+      # rubocop:disable Rails/Delegate
+      def model_name
+        superclass.model_name
+      end
+      # rubocop:enable Rails/Delegate
+    end
+    super
   end
 
   # As Rails loads an object it casts it to the class in the 'type' field. If we ensure that the type and
@@ -163,7 +170,7 @@ class Operatingsystem < ActiveRecord::Base
   end
 
   def self.find_by_to_label(str)
-    os = self.find_by_description(str)
+    os = self.find_by_description(str.to_s)
     return os if os
     a = str.split(" ")
     b = a[1].split('.') if a[1]
@@ -171,6 +178,11 @@ class Operatingsystem < ActiveRecord::Base
     cond.merge!(:major => b[0]) if b && b[0]
     cond.merge!(:minor => b[1]) if b && b[1]
     self.where(cond).first
+  end
+
+  # Implemented only in the OSs subclasses where it makes sense
+  def available_loaders
+    ["None", "PXELinux BIOS"]
   end
 
   # sets the prefix for the tfp files based on the os / arch combination
@@ -201,19 +213,14 @@ class Operatingsystem < ActiveRecord::Base
     false
   end
 
-  # override in sub operatingsystem classes as required.
-  def pxe_variant
-    "syslinux"
+  # Compatible kinds for this OS sorted by preferrence
+  def template_kinds
+    ["PXEGrub2", "PXELinux", "PXEGrub"]
   end
 
-  # The kind of PXE configuration template used. PXELinux and PXEGrub are currently supported
-  def template_kind
-    "PXELinux"
-  end
-
-  #handle things like gpxelinux/ gpxe / pxelinux here
   def boot_filename(host = nil)
-    "pxelinux.0"
+    return default_boot_filename if host.nil? || host.pxe_loader.nil?
+    self.class.all_loaders_map(host.arch.nil? ? '' : host.arch.bootfilename_efi)[host.pxe_loader]
   end
 
   # Does this OS family use release_name in its naming scheme
@@ -283,5 +290,10 @@ class Operatingsystem < ActiveRecord::Base
     provisioning_template_id_empty = attributes[:provisioning_template_id].blank?
     attributes.merge!({:_destroy => 1}) if template_exists && provisioning_template_id_empty
     (!template_exists && provisioning_template_id_empty)
+  end
+
+  # overriden by operating systems
+  def pxe_kernel_options(params)
+    []
   end
 end

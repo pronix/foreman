@@ -2,8 +2,9 @@ module Api
   module V1
     class HostsController < V1::BaseController
       include Api::CompatibilityChecker
-      before_action :check_create_host_nested, :only => [:create, :update]
+      include Foreman::Controller::Parameters::Host
 
+      before_action :check_create_host_nested, :only => [:create, :update]
       before_action :find_resource, :only => %w{show update destroy status}
 
       api :GET, "/hosts/", "List all hosts."
@@ -40,6 +41,7 @@ module Api
         param :puppetclass_ids, Array
         param :operatingsystem_id, String, :desc => "required if host is managed and value is not inherited from host group"
         param :medium_id, String, :desc => "required if not imaged based provisioning and host is managed and value is not inherited from host group"
+        param :pxe_loader, Operatingsystem.all_loaders, :desc => N_("DHCP filename option")
         param :ptable_id, :number, :desc => "required if host is managed and custom partition has not been defined"
         param :subnet_id, :number, :desc => "IPv4 subnet"
         param :subnet6_id, :number, :desc => "IPv6 subnet"
@@ -67,7 +69,7 @@ module Api
       end
 
       def create
-        @host = Host.new(params[:host])
+        @host = Host.new(host_params)
         @host.managed = true if (params[:host] && params[:host][:managed].nil?)
         forward_request_url
         process_response @host.save
@@ -109,7 +111,7 @@ module Api
       end
 
       def update
-        process_response @host.update_attributes(params[:host])
+        process_response @host.update_attributes(host_params)
       end
 
       api :DELETE, "/hosts/:id/", "Delete an host."

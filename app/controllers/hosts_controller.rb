@@ -1,14 +1,16 @@
 class HostsController < ApplicationController
+  include ScopesPerAction
   include Foreman::Controller::HostDetails
   include Foreman::Controller::AutoCompleteSearch
   include Foreman::Controller::TaxonomyMultiple
   include Foreman::Controller::SmartProxyAuth
+  include Foreman::Controller::Parameters::Host
 
   PUPPETMASTER_ACTIONS=[ :externalNodes, :lookup ]
   SEARCHABLE_ACTIONS= %w[index active errors out_of_sync pending disabled ]
-  AJAX_REQUESTS=%w{compute_resource_selected hostgroup_or_environment_selected current_parameters puppetclass_parameters process_hostgroup process_taxonomy review_before_build}
+  AJAX_REQUESTS=%w{compute_resource_selected hostgroup_or_environment_selected current_parameters puppetclass_parameters process_hostgroup process_taxonomy review_before_build scheduler_hint_selected}
   BOOT_DEVICES={ :disk => N_('Disk'), :cdrom => N_('CDROM'), :pxe => N_('PXE'), :bios => N_('BIOS') }
-  MULTIPLE_ACTIONS = %w(multiple_parameters update_multiple_parameters  select_multiple_hostgroup
+  MULTIPLE_ACTIONS = %w(multiple_parameters update_multiple_parameters select_multiple_hostgroup
                         update_multiple_hostgroup select_multiple_environment update_multiple_environment
                         multiple_destroy submit_multiple_destroy multiple_build
                         submit_multiple_build multiple_disable submit_multiple_disable
@@ -19,11 +21,17 @@ class HostsController < ApplicationController
                         select_multiple_puppet_proxy update_multiple_puppet_proxy
                         select_multiple_puppet_ca_proxy update_multiple_puppet_ca_proxy)
 
+  HOST_POWER = {
+    :on =>  { :state => 'on', :title => N_('On') },
+    :off => { :state => 'off', :title => N_('Off') },
+    :na =>  { :state => 'na', :title => N_('N/A') }
+  }.freeze
+
   add_smart_proxy_filters PUPPETMASTER_ACTIONS, :features => ['Puppet']
 
-  before_action :ajax_request, :only => AJAX_REQUESTS
+  before_action :ajax_request, :only => AJAX_REQUESTS + [:get_power_state]
   before_action :find_resource, :only => [:show, :clone, :edit, :update, :destroy, :puppetrun, :review_before_build,
-                                          :setBuild, :cancelBuild, :power, :overview, :bmc, :vm,
+                                          :setBuild, :cancelBuild, :power, :get_power_state, :overview, :bmc, :vm,
                                           :runtime, :resources, :nics, :ipmi_boot, :console,
                                           :toggle_manage, :pxe_config, :storeconfig_klasses, :disassociate]
 
@@ -37,7 +45,7 @@ class HostsController < ApplicationController
 
   def index(title = nil)
     begin
-      search = resource_base.search_for(params[:search], :order => params[:order])
+      search = action_scope_for(:index, resource_base_with_search)
     rescue => e
       error e.to_s
       search = resource_base.search_for ''
@@ -85,7 +93,7 @@ class HostsController < ApplicationController
   end
 
   def create
-    @host = Host.new(params[:host])
+    @host = Host.new(host_params)
     @host.managed = true if (params[:host] && params[:host][:managed].nil?)
     forward_url_options
     if @host.save
@@ -104,7 +112,7 @@ class HostsController < ApplicationController
   def update
     forward_url_options
     Taxonomy.no_taxonomy_scope do
-      attributes = @host.apply_inherited_attributes(params[:host])
+      attributes = @host.apply_inherited_attributes(host_params)
 
       if @host.update_attributes(attributes)
         process_success :success_redirect => host_path(@host)
@@ -126,6 +134,12 @@ class HostsController < ApplicationController
   end
 
   # form AJAX methods
+  def random_name
+    render :json => { :name => NameGenerator.new.next_random_name }
+  rescue ActionView::Template::Error => exception
+    process_ajax_error exception, 'generate random name'
+  end
+
   def compute_resource_selected
     return not_found unless (params[:host] && (id=params[:host][:compute_resource_id]))
     Taxonomy.as_taxonomy @organization, @location do
@@ -134,10 +148,20 @@ class HostsController < ApplicationController
       render :partial => "compute", :locals => { :compute_resource => compute_resource,
                                                  :vm_attrs         => compute_resource.compute_profile_attributes_for(compute_profile_id) }
     end
+  rescue ActionView::Template::Error => exception
+    process_ajax_error exception, 'render compute resource template'
+  end
+
+  def scheduler_hint_selected
+    return not_found unless (params[:host])
+    @host = Host.new(host_params)
+    Taxonomy.as_taxonomy @organization, @location do
+      render :partial => "compute_resources_vms/form/scheduler_hint_filters"
+    end
   end
 
   def interfaces
-    @host = Host.new params[:host]
+    @host = Host.new host_params
     @host.apply_compute_profile(InterfaceMerge.new)
 
     render :partial => "interfaces_tab"
@@ -171,15 +195,20 @@ class HostsController < ApplicationController
   #will return HTML error codes upon failure
 
   def externalNodes
-    certname = params[:name]
+    certname = params[:name].to_s
     @host ||= resource_base.find_by_certname certname
     @host ||= resource_base.friendly.find certname
-    not_found and return unless @host
+    unless @host
+      not_found
+      return
+    end
 
     begin
       respond_to do |format|
-        format.html { render :text => "<pre>#{ERB::Util.html_escape(@host.info.to_yaml)}</pre>" }
-        format.yml { render :text => @host.info.to_yaml }
+        # don't break lines in yaml to support Ruby < 1.9.3
+        host_info_yaml = @host.info.to_yaml(:line_width => -1)
+        format.html { render :text => "<pre>#{ERB::Util.html_escape(host_info_yaml)}</pre>" }
+        format.yml { render :text => host_info_yaml }
       end
     rescue => e
       Foreman::Logging.exception("Failed to generate external nodes for #{@host}", e)
@@ -208,7 +237,12 @@ class HostsController < ApplicationController
     if @host.setBuild
       if (params[:host] && params[:host][:build] == '1')
         begin
-          process_success :success_msg => _("Enabled %s for reboot and rebuild") % (@host), :success_redirect => :back if @host.power.reset
+          if @host.power.reset
+            message = _("Enabled %s for reboot and rebuild")
+          else
+            message = _("Enabled %s for rebuild on next boot, but failed to power cycle the host")
+          end
+          process_success :success_msg => message % (@host), :success_redirect => :back
         rescue => error
           message = _('Failed to reboot %s.') % @host
           warning(message)
@@ -227,16 +261,32 @@ class HostsController < ApplicationController
     if @host.built(false)
       process_success :success_msg =>  _("Canceled pending build for %s") % (@host.name), :success_redirect => :back
     else
-      process_error :redirect => :back, :error_msg => _("Failed to cancel pending build for %s") % (@host.name)
+      process_error :redirect => :back, :error_msg => _("Failed to cancel pending build for %{hostname} with the following errors: %{errors}") % {:hostname => @host.name, :errors => @host.errors.full_messages.join(', ')}
     end
   end
 
   def power
-    return invalid_request unless PowerManager::SUPPORTED_ACTIONS.include?(params[:power_action])
+    return invalid_request unless PowerManager::REAL_ACTIONS.include?(params[:power_action])
     @host.power.send(params[:power_action].to_sym)
     process_success :success_redirect => :back, :success_msg => _("%{host} is about to %{action}") % { :host => @host, :action => _(params[:power_action].downcase) }
   rescue => e
     process_error :redirect => :back, :error_msg => _("Failed to %{action} %{host}: %{e}") % { :action => _(params[:power_action]), :host => @host, :e => e }
+  end
+
+  def get_power_state
+    result = {:id => @host.id}.merge(host_power_state(:na))
+    if @host.supports_power?
+      result = host_power_ping result
+    else
+      result[:statusText] = _('Power operations are not enabled on this host.')
+    end
+
+    render :json => result
+  rescue => e
+    Foreman::Logging.exception("Failed to fetch power status", e)
+    result.merge!(host_power_state(:na))
+    result[:statusText] = _("Failed to fetch power status: %s") % e
+    render :json => result
   end
 
   def overview
@@ -348,7 +398,8 @@ class HostsController < ApplicationController
   def update_multiple_parameters
     if params[:name].empty?
       notice _("No parameters were allocated to the selected hosts, can't mass assign.")
-      redirect_to hosts_path and return
+      redirect_to hosts_path
+      return
     end
 
     @skipped_parameters = {}
@@ -367,7 +418,8 @@ class HostsController < ApplicationController
     end
     if @skipped_parameters.empty?
       notice _('Updated all hosts!')
-      redirect_to(hosts_path) and return
+      redirect_to(hosts_path)
+      return
     else
       notice _("%s Parameters updated, see below for more information") % (counter)
     end
@@ -380,7 +432,8 @@ class HostsController < ApplicationController
     # simple validations
     unless (id=params["hostgroup"]["id"])
       error _('No host group selected!')
-      redirect_to(select_multiple_hostgroup_hosts_path) and return
+      redirect_to(select_multiple_hostgroup_hosts_path)
+      return
     end
     hg = Hostgroup.find_by_id(id)
     #update the hosts
@@ -401,7 +454,8 @@ class HostsController < ApplicationController
     # simple validations
     if (params[:environment].nil?) || (id=params["environment"]["id"]).nil?
       error _('No environment selected!')
-      redirect_to(select_multiple_environment_hosts_path) and return
+      redirect_to(select_multiple_environment_hosts_path)
+      return
     end
 
     ev = Environment.find_by_id(id)
@@ -423,7 +477,8 @@ class HostsController < ApplicationController
     # simple validations
     if (params[:owner].nil?) || (id=params["owner"]["id"]).nil?
       error _('No owner selected!')
-      redirect_to(select_multiple_owner_hosts_path) and return
+      redirect_to(select_multiple_owner_hosts_path)
+      return
     end
 
     #update the hosts
@@ -507,7 +562,7 @@ class HostsController < ApplicationController
   def submit_multiple_build
     reboot = params[:host][:build] == '1' || false
 
-    @hosts.to_a.delete_if do |host|
+    missed_hosts = @hosts.select do |host|
       success = true
       forward_url_options(host)
       begin
@@ -518,31 +573,28 @@ class HostsController < ApplicationController
         Foreman::Logging.exception(message, error)
         success = false
       end
-      success
+      !success
     end
 
-    missed_hosts = @hosts.map(&:name).to_sentence
-    if @hosts.empty?
+    if missed_hosts.empty?
       if reboot
         notice _("The selected hosts were enabled for reboot and rebuild")
       else
         notice _("The selected hosts will execute a build operation on next reboot")
       end
     else
-      error _("The following hosts failed the build operation: %s") % (missed_hosts)
+      error _("The following hosts failed the build operation: %s") % missed_hosts.map(&:name).to_sentence
     end
     redirect_to(hosts_path)
   end
 
   def submit_multiple_destroy
     # keep all the ones that were not deleted for notification.
-    @hosts.to_a.delete_if {|host| host.destroy}
-
-    missed_hosts = @hosts.map(&:name).to_sentence
-    if @hosts.empty?
+    missed_hosts = @hosts.select {|host| !host.destroy}
+    if missed_hosts.empty?
       notice _("Destroyed selected hosts")
     else
-      error _("The following hosts were not deleted: %s") % (missed_hosts)
+      error _("The following hosts were not deleted: %s") % missed_hosts.map(&:name).to_sentence
     end
     redirect_to(hosts_path)
   end
@@ -617,30 +669,31 @@ class HostsController < ApplicationController
     @hostgroup = Hostgroup.find(params[:host][:hostgroup_id]) if params[:host][:hostgroup_id].to_i > 0
     return head(:not_found) unless @hostgroup
 
-    @architecture    = @hostgroup.architecture
-    @operatingsystem = @hostgroup.operatingsystem
-    @environment     = @hostgroup.environment
-    @domain          = @hostgroup.domain
-    @subnet          = @hostgroup.subnet
-    @compute_profile = @hostgroup.compute_profile
-    @realm           = @hostgroup.realm
-
     @host = if params[:host][:id]
               host = Host::Base.authorized(:view_hosts, Host).find(params[:host][:id])
               host = host.becomes Host::Managed
-              host.attributes = host.apply_inherited_attributes(params[:host])
+              host.attributes = host.apply_inherited_attributes(host_params)
               host
             else
-              Host.new(params[:host])
+              Host.new(host_params)
             end
-    @host.set_hostgroup_defaults
+    @host.set_hostgroup_defaults true
     @host.set_compute_attributes unless params[:host][:compute_profile_id]
+
+    @architecture    = @host.architecture
+    @operatingsystem = @host.operatingsystem
+    @environment     = @host.environment
+    @domain          = @host.domain
+    @subnet          = @host.subnet
+    @compute_profile = @host.compute_profile
+    @realm           = @host.realm
+
     render :partial => "form"
   end
 
   def process_taxonomy
     return head(:not_found) unless @location || @organization
-    @host = Host.new(params[:host])
+    @host = Host.new(host_params)
     # revert compute resource to "Bare Metal" (nil) if selected
     # compute resource is not included taxonomy
     Taxonomy.as_taxonomy @organization, @location do
@@ -656,8 +709,7 @@ class HostsController < ApplicationController
   # renders only resulting templates set so the rest of form is unaffected
   def template_used
     host = params[:id] ? Host.readonly.find(params[:id]) : Host.new
-    association_keys = params[:host].keys.select { |k| k =~ /.*_ids\Z/ }
-    host.attributes = params[:host].except(:host_parameters_attributes).except(*association_keys)
+    host.attributes = host_params.select { |k,v| !k.end_with?('_ids') }.except(:host_parameters_attributes)
     templates = host.available_template_kinds(params[:provisioning])
     return not_found if templates.empty?
     render :partial => 'provisioning', :locals => { :templates => templates }
@@ -672,7 +724,8 @@ class HostsController < ApplicationController
   def action_permission
     case params[:action]
       when 'clone', 'externalNodes', 'overview', 'bmc', 'vm', 'runtime', 'resources', 'templates', 'nics',
-          'pxe_config', 'storeconfig_klasses', 'active', 'errors', 'out_of_sync', 'pending', 'disabled'
+          'pxe_config', 'storeconfig_klasses', 'active', 'errors', 'out_of_sync', 'pending', 'disabled',
+          'get_power_state'
         :view
       when 'puppetrun', 'multiple_puppetrun', 'update_multiple_puppetrun'
         :puppetrun
@@ -695,7 +748,8 @@ class HostsController < ApplicationController
           'select_multiple_owner', 'update_multiple_owner',
           'select_multiple_power_state', 'update_multiple_power_state',
           'select_multiple_puppet_proxy', 'update_multiple_puppet_proxy',
-          'select_multiple_puppet_ca_proxy', 'update_multiple_puppet_ca_proxy'
+          'select_multiple_puppet_ca_proxy', 'update_multiple_puppet_ca_proxy',
+          'random_name'
         :edit
       when 'multiple_destroy', 'submit_multiple_destroy'
         :destroy
@@ -711,9 +765,9 @@ class HostsController < ApplicationController
         @host      = @host.becomes(Host::Managed)
         @host.type = "Host::Managed"
       end
-      @host.attributes = params['host']
+      @host.attributes = host_params
     else
-      @host ||= Host::Managed.new(params['host'])
+      @host ||= Host::Managed.new(host_params)
     end
 
     @host
@@ -754,11 +808,18 @@ class HostsController < ApplicationController
 
   # overwrite application_controller
   def find_resource
-    not_found and return false if (id = params[:id]).blank?
+    if (id = params[:id]).blank?
+      not_found
+      return false
+    end
     @host   = resource_base.friendly.find(id)
-    @host ||= resource_base.find_by_mac params[:host][:mac] if params[:host] && params[:host][:mac]
+    @host ||= resource_base.find_by_mac params[:host][:mac].to_s if params[:host] && params[:host][:mac]
 
-    not_found and return(false) unless @host
+    unless @host
+      not_found
+      return(false)
+    end
+
     @host
   end
 
@@ -782,11 +843,13 @@ class HostsController < ApplicationController
       @hosts = resource_base.where("hosts.id IN (?) or hosts.name IN (?)", params[:host_ids], params[:host_names])
       if @hosts.empty?
         error _('No hosts were found with that id or name')
-        redirect_to(hosts_path) and return false
+        redirect_to(hosts_path)
+        return false
       end
     else
       error _('No hosts selected')
-      redirect_to(hosts_path) and return false
+      redirect_to(hosts_path)
+      return false
     end
 
     return @hosts
@@ -794,19 +857,19 @@ class HostsController < ApplicationController
     message = _("Something went wrong while selecting hosts - %s") % error
     error(message)
     Foreman::Logging.exception(message, error)
-    redirect_to hosts_path and return false
+    redirect_to hosts_path
+    return false
   end
 
   def toggle_hostmode(mode = true)
     # keep all the ones that were not disabled for notification.
-    @hosts.to_a.delete_if { |host| host.update_attribute(:enabled, mode) }
+    missed_hosts = @hosts.select { |host| !host.update_attribute(:enabled, mode) }
     action = mode ? "enabled" : "disabled"
 
-    missed_hosts = @hosts.map(&:name).to_sentence
-    if @hosts.empty?
+    if missed_hosts.empty?
       notice _("%s selected hosts") % (action.capitalize)
     else
-      error _("The following hosts were not %{action}: %{missed_hosts}") % { :action => action, :missed_hosts => missed_hosts }
+      error _("The following hosts were not %{action}: %{missed_hosts}") % { :action => action, :missed_hosts => missed_hosts.map(&:name).to_sentence }
     end
     redirect_to(hosts_path)
   end
@@ -834,7 +897,8 @@ class HostsController < ApplicationController
     if params[:power].blank? || (action=params[:power][:action]).blank? ||
         !PowerManager::REAL_ACTIONS.include?(action)
       error _('No or invalid power state selected!')
-      redirect_to(select_multiple_power_state_hosts_path) and return false
+      redirect_to(select_multiple_power_state_hosts_path)
+      return false
     end
   end
 
@@ -849,12 +913,14 @@ class HostsController < ApplicationController
   def validate_multiple_proxy(redirect_path)
     if params[:proxy].nil? || (proxy_id = params[:proxy][:proxy_id]).nil?
       error _('No proxy selected!')
-      redirect_to(redirect_path) and return false
+      redirect_to(redirect_path)
+      return false
     end
 
     if !proxy_id.blank? && !SmartProxy.find_by_id(proxy_id)
       error _('Invalid proxy selected!')
-      redirect_to(redirect_path) and return false
+      redirect_to(redirect_path)
+      return false
     end
   end
 
@@ -899,5 +965,23 @@ class HostsController < ApplicationController
       @host.provisioning_template(:kind => kind.name)
     end.compact
     raise Foreman::Exception.new(N_("No templates found")) if @templates.empty?
+  end
+
+  def host_power_ping(result)
+    timeout = 3
+    Timeout.timeout(timeout) do
+      result.merge!(host_power_state(@host.supports_power_and_running? ? :on : :off))
+    end
+    result
+  rescue Timeout::Error
+    logger.debug("Failed to retrieve power status for #{@host} within #{timeout} seconds.")
+    result[:statusText] = n_("Failed to retrieve power status for %{host} within %{timeout} second.",
+                             "Failed to retrieve power status for %{host} within %{timeout} seconds.", timeout) %
+                            {:host => @host, :timeout => timeout}
+    result
+  end
+
+  def host_power_state(key)
+    HOST_POWER[key].merge(:title => _(HOST_POWER[key][:title]))
   end
 end

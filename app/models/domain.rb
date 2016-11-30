@@ -7,17 +7,22 @@ class Domain < ActiveRecord::Base
   include Taxonomix
   include StripLeadingAndTrailingDot
   include Parameterizable::ByIdName
+  include BelongsToProxies
 
-  audited :allow_mass_assignment => true
-  attr_accessible :name, :fullname, :dns_id, :domain_parameters_attributes
-
+  audited
   validates_lengths_from_database
   has_many :hostgroups
   #order matters! see https://github.com/rails/rails/issues/670
   before_destroy EnsureNotUsedBy.new(:interfaces, :hostgroups, :subnets)
   has_many :subnet_domains, :dependent => :destroy, :inverse_of => :domain
   has_many :subnets, :through => :subnet_domains
-  belongs_to :dns, :class_name => "SmartProxy"
+
+  belongs_to_proxy :dns,
+    :feature => 'DNS',
+    :label => N_('DNS Proxy'),
+    :description => N_('DNS proxy to use within this domain for managing A records, note that PTR records are managed via Subnet DNS proxy'),
+    :api_description => N_('DNS proxy ID to use within this domain')
+
   has_many :domain_parameters, :dependent => :destroy, :foreign_key => :reference_id, :inverse_of => :domain
   has_many :parameters, :dependent => :destroy, :foreign_key => :reference_id, :class_name => "DomainParameter"
   has_many :interfaces, :class_name => 'Nic::Base'
@@ -29,7 +34,6 @@ class Domain < ActiveRecord::Base
   include ParameterValidators
   validates :name, :presence => true, :uniqueness => true
   validates :fullname, :uniqueness => true, :allow_blank => true, :allow_nil => true
-  validates :dns, :proxy_features => { :feature => "DNS", :message => N_('does not have the DNS feature') }
 
   scoped_search :on => [:name, :fullname], :complete_value => true
   scoped_search :in => :domain_parameters, :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
@@ -49,7 +53,7 @@ class Domain < ActiveRecord::Base
   # return the primary name server for our domain based on DNS lookup
   # it first searches for SOA record, if it failed it will search for NS records
   def nameservers
-    return [] if Setting.query_local_nameservers
+    return [] if Setting[:query_local_nameservers]
     dns = Resolv::DNS.new
     ns = dns.getresources(name, Resolv::DNS::Resource::IN::SOA).collect {|r| r.mname.to_s}
     ns = dns.getresources(name, Resolv::DNS::Resource::IN::NS).collect {|r| r.name.to_s} if ns.empty?

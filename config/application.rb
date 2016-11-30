@@ -55,6 +55,8 @@ require File.expand_path('../../lib/timed_cached_store.rb', __FILE__)
 require File.expand_path('../../lib/foreman/exception', __FILE__)
 require File.expand_path('../../lib/core_extensions', __FILE__)
 require File.expand_path('../../lib/foreman/logging', __FILE__)
+require File.expand_path('../../lib/middleware/catch_json_parse_errors', __FILE__)
+require File.expand_path('../../lib/middleware/tagged_logging', __FILE__)
 
 if SETTINGS[:support_jsonp]
   if File.exist?(File.expand_path('../../Gemfile.in', __FILE__))
@@ -86,6 +88,7 @@ module Foreman
 
     config.autoload_paths += %W(#{config.root}/app/models/auth_sources)
     config.autoload_paths += %W(#{config.root}/app/models/compute_resources)
+    config.autoload_paths += %W(#{config.root}/app/models/fact_names)
     config.autoload_paths += %W(#{config.root}/app/models/lookup_keys)
     config.autoload_paths += %W(#{config.root}/app/models/host_status)
     config.autoload_paths += %W(#{config.root}/app/models/operatingsystems)
@@ -154,10 +157,16 @@ module Foreman
     config.assets.version = '1.0'
 
     # Catching Invalid JSON Parse Errors with Rack Middleware
-    config.middleware.insert_before ActionDispatch::ParamsParser, "Middleware::CatchJsonParseErrors"
+    config.middleware.insert_before ActionDispatch::ParamsParser, Middleware::CatchJsonParseErrors
+
+    # Record request ID in logging MDC storage
+    config.middleware.insert_before Rails::Rack::Logger, Middleware::TaggedLogging
 
     # Add apidoc hash in headers for smarter caching
-    config.middleware.use "Apipie::Middleware::ChecksumInHeaders"
+    config.middleware.use Apipie::Middleware::ChecksumInHeaders
+
+    # New config option to opt out of params "deep munging" that was used to address security vulnerability CVE-2013-0155.
+    config.action_dispatch.perform_deep_munge = false
 
     Foreman::Logging.configure(
       :log_directory => "#{Rails.root}/log",
@@ -168,9 +177,11 @@ module Foreman
     # Check that the loggers setting exist to configure the app and sql loggers
     Foreman::Logging.add_loggers((SETTINGS[:loggers] || {}).reverse_merge(
       :app => {:enabled => true},
+      :audit => {:enabled => true},
       :ldap => {:enabled => false},
       :permissions => {:enabled => false},
-      :sql => {:enabled => false}
+      :sql => {:enabled => false},
+      :templates => {:enabled => true}
     ))
 
     config.logger = Foreman::Logging.logger('app')

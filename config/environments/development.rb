@@ -38,8 +38,8 @@ Foreman::Application.configure do
   # Raises helpful error messages.
   config.assets.raise_runtime_errors = true
 
-  # Raise exception on mass assignment protection for Active Record models
-  config.active_record.mass_assignment_sanitizer = :strict
+  # Raise exception on mass assignment of unfiltered parameters
+  config.action_controller.action_on_unpermitted_parameters = :strict
 
   config.after_initialize do
     Bullet.enable = true
@@ -48,5 +48,11 @@ Foreman::Application.configure do
     Bullet.rails_logger = true
     Bullet.add_footer = true
     Bullet.counter_cache_enable = false
+    Bullet.add_whitelist :type => :n_plus_one_query, :class_name => "Puppetclass", :association => :environments
+    Bullet.add_whitelist :type => :n_plus_one_query, :class_name => "Puppetclass", :association => :class_params
   end if defined?(Bullet)
+
+  #Allow disabling the webpack dev server from the settings
+  config.webpack.dev_server.enabled = SETTINGS.fetch(:webpack_dev_server, true)
+  config.webpack.dev_server.https = SETTINGS.fetch(:webpack_dev_server_https, false)
 end

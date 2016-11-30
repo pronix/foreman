@@ -1,14 +1,15 @@
 require 'integration_test_helper'
 
-class DashboardIntegrationTest < ActionDispatch::IntegrationTest
+class DashboardIntegrationTest < IntegrationTestWithJavascript
   def setup
     Dashboard::Manager.reset_user_to_default(users(:admin))
   end
 
   def assert_dashboard_link(text)
     visit dashboard_path
+    wait_for_ajax
     assert page.has_link?(text), "link '#{text}' was expected, but it does not exist"
-    within "li[data-name='Status table']" do
+    within "li[data-name='Host Configuration Status']" do
       click_link(text)
     end
     assert_current_path hosts_path, :only_path => true
@@ -17,6 +18,7 @@ class DashboardIntegrationTest < ActionDispatch::IntegrationTest
 
   test "dashboard page" do
     assert_index_page(dashboard_path,"Overview",false,true,false)
+    wait_for_ajax
     assert page.has_content? 'Generated at'
   end
 
@@ -54,6 +56,7 @@ class DashboardIntegrationTest < ActionDispatch::IntegrationTest
     Capybara.reset_sessions!
     login_admin
     visit dashboard_path
-    assert_equal deleted_widget.name, page.find('li.widget-add a').text
+    wait_for_ajax
+    assert_equal deleted_widget.name, page.find('li.widget-add a', :visible => :hidden).text(:all)
   end
 end

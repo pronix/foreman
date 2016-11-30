@@ -41,6 +41,7 @@ module Hostext
       scoped_search :in => :environment, :on => :name,    :complete_value => true,  :rename => :environment
       scoped_search :in => :architecture, :on => :name,    :complete_value => true, :rename => :architecture
       scoped_search :in => :puppet_proxy, :on => :name,    :complete_value => true, :rename => :puppetmaster, :only_explicit => true
+      scoped_search :on => :puppet_proxy_id, :complete_value => false, :only_explicit => true
       scoped_search :in => :puppet_ca_proxy, :on => :name, :complete_value => true, :rename => :puppet_ca, :only_explicit => true
       scoped_search :in => :puppet_proxy, :on => :name, :complete_value => true, :rename => :smart_proxy, :ext_method => :search_by_proxy, :only_explicit => true
       scoped_search :in => :compute_resource, :on => :name,    :complete_value => true, :rename => :compute_resource
@@ -97,8 +98,6 @@ module Hostext
         scoped_search :in => :search_users, :on => :mail,      :complete_value => true, :only_explicit => true, :rename => :'user.mail',     :operators => ['= ', '~ '], :ext_method => :search_by_user
       end
 
-      private
-
       cattr_accessor :fact_values_table_counter
     end
 
@@ -153,12 +152,12 @@ module Hostext
       def search_by_params(key, operator, value)
         key_name = key.sub(/^.*\./,'')
         condition = sanitize_sql_for_conditions(["name = ? and value #{operator} ?", key_name, value_to_sql(operator, value)])
-        p = Parameter.where(condition).order(:priority)
+        p = Parameter.where(condition).reorder(:priority)
         return {:conditions => '1 = 0'} if p.blank?
 
         max         = p.first.priority
         condition   = sanitize_sql_for_conditions(["name = ? and NOT(value #{operator} ?) and priority > ?",key_name,value_to_sql(operator, value), max])
-        n           = Parameter.where(condition).order(:priority)
+        n           = Parameter.where(condition).reorder(:priority)
 
         conditions = param_conditions(p)
         negate = param_conditions(n)
@@ -226,7 +225,7 @@ module Hostext
               conditions << "nics.subnet_id = #{param.reference_id} OR nics.subnet6_id = #{param.reference_id}"
           end
         end
-        conditions.empty? ? [] : "( #{conditions.join(' OR ')} )"
+        conditions.empty? ? "" : "( #{conditions.join(' OR ')} )"
       end
 
       #override these if needed to add connection in plugin

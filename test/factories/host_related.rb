@@ -48,7 +48,7 @@ FactoryGirl.define do
   factory :nic_base, :class => Nic::Base do
     type 'Nic::Base'
     sequence(:identifier) { |n| "eth#{n}" }
-    sequence(:mac) { |n| "00:00:00:00:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
+    sequence(:mac) { |n| "00:23:45:ab:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
 
     trait :with_subnet do
       subnet do
@@ -65,7 +65,7 @@ FactoryGirl.define do
 
   factory :nic_managed, :class => Nic::Managed, :parent => :nic_interface do
     type 'Nic::Managed'
-    sequence(:mac) { |n| "01:23:45:ab:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
+    sequence(:mac) { |n| "00:33:45:ab:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
     sequence(:ip) { |n| IPAddr.new(n, Socket::AF_INET).to_s }
 
     trait :without_ipv4 do
@@ -79,7 +79,7 @@ FactoryGirl.define do
 
   factory :nic_bmc, :class => Nic::BMC, :parent => :nic_managed do
     type 'Nic::BMC'
-    sequence(:mac) { |n| "01:23:56:cd:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
+    sequence(:mac) { |n| "00:43:56:cd:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
     sequence(:ip) { |n| IPAddr.new(255 + n, Socket::AF_INET).to_s }
     provider 'IPMI'
     username 'admin'
@@ -98,7 +98,7 @@ FactoryGirl.define do
   factory :nic_primary_and_provision, :parent => :nic_managed, :class => Nic::Managed do
     primary true
     provision true
-    sequence(:mac) { |n| "01:23:67:ab:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
+    sequence(:mac) { |n| "00:53:67:ab:" + n.to_s(16).rjust(4, '0').insert(2, ':') }
     sequence(:ip) { |n| IPAddr.new(n, Socket::AF_INET).to_s }
   end
 
@@ -134,7 +134,7 @@ FactoryGirl.define do
     end
 
     trait :with_hostgroup do
-      hostgroup { FactoryGirl.create(:hostgroup, :environment => environment) }
+      hostgroup { FactoryGirl.create(:hostgroup, :with_domain, :with_os, :environment => environment) }
     end
 
     trait :with_puppetclass do
@@ -168,8 +168,8 @@ FactoryGirl.define do
         report_count 5
       end
       after(:create) do |host,evaluator|
-        evaluator.report_count.times do
-          report = FactoryGirl.create(:report, :host => host)
+        evaluator.report_count.times do |i|
+          report = FactoryGirl.create(:report, :host => host, :reported_at => (evaluator.report_count - i).minutes.ago)
           host.last_report = report.reported_at
         end
       end
@@ -225,6 +225,7 @@ FactoryGirl.define do
 
     trait :managed do
       managed true
+      pxe_loader "Grub2 UEFI"
       architecture { operatingsystem.try(:architectures).try(:first) }
       medium { operatingsystem.try(:media).try(:first) }
       ptable { operatingsystem.try(:ptables).try(:first) }
@@ -362,6 +363,10 @@ FactoryGirl.define do
       subnet { FactoryGirl.build(:subnet_ipv4, :tftp, locations: [location], organizations: [organization]) }
     end
 
+    trait :with_tftp_v6_subnet do
+      subnet6 { FactoryGirl.build(:subnet_ipv6, :tftp, locations: [location], organizations: [organization]) }
+    end
+
     trait :with_tftp_orchestration do
       managed
       with_tftp_subnet
@@ -371,6 +376,33 @@ FactoryGirl.define do
                                          :domain => FactoryGirl.build(:domain),
                                          :subnet => subnet,
                                          :ip => subnet.network.sub(/0\Z/, '2'))]
+      end
+    end
+
+    trait :with_tftp_v6_orchestration do
+      managed
+      with_tftp_v6_subnet
+      interfaces do
+        [FactoryGirl.build(:nic_managed, :primary => true,
+                                         :provision => true,
+                                         :domain => FactoryGirl.build(:domain),
+                                         :subnet6 => subnet6,
+                                         :ip6 => IPAddr.new(subnet6.ipaddr.to_i + 1, subnet6.family).to_s)]
+      end
+    end
+
+    trait :with_tftp_dual_stack_orchestration do
+      managed
+      with_tftp_subnet
+      with_tftp_v6_subnet
+      interfaces do
+        [FactoryGirl.build(:nic_managed, :primary => true,
+                                         :provision => true,
+                                         :domain => FactoryGirl.build(:domain),
+                                         :subnet => subnet,
+                                         :subnet6 => subnet6,
+                                         :ip => subnet.network.sub(/0\Z/, '2'),
+                                         :ip6 => IPAddr.new(subnet6.ipaddr.to_i + 1, subnet6.family).to_s)]
       end
     end
 
@@ -387,6 +419,10 @@ FactoryGirl.define do
 
     trait :with_realm do
       realm
+    end
+
+    trait :without_owner do
+      owner nil
     end
   end
 
@@ -414,6 +450,7 @@ FactoryGirl.define do
     trait :with_parameter do
       after(:create) do |hg,evaluator|
         FactoryGirl.create(:hostgroup_parameter, :hostgroup => hg)
+        hg.group_parameters.reload
       end
     end
 
@@ -430,6 +467,10 @@ FactoryGirl.define do
       medium { operatingsystem.try(:media).try(:first) }
       ptable { operatingsystem.try(:ptables).try(:first) }
       association :operatingsystem, :with_associations
+    end
+
+    trait :with_domain do
+      domain
     end
 
     trait :with_puppet_orchestration do

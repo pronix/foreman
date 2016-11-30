@@ -1,8 +1,7 @@
 class Template < ActiveRecord::Base
-  validates_lengths_from_database
+  include Exportable
 
-  attr_accessible :name, :default, :template, :audit_comment, :snippet, :locked,
-    :template_kind, :template_kind_name, :template_kind_id, :vendor
+  validates_lengths_from_database
 
   validates :name, :presence => true
   validates :template, :presence => true
@@ -12,6 +11,8 @@ class Template < ActiveRecord::Base
   before_destroy :check_if_template_is_locked
 
   before_save :remove_trailing_chars
+
+  attr_exportable :name, :snippet
 
   class Jail < Safemode::Jail
     allow :name
@@ -32,6 +33,28 @@ class Template < ActiveRecord::Base
 
   def preview_host_collection
     Host.authorized(:view_hosts).order(:name).limit(100)
+  end
+
+  def metadata
+    "<%#\n#{to_export(false).to_yaml.sub(/\A---$/, '').strip}\n%>\n"
+  end
+
+  def to_erb
+    if self.template.start_with?('<%#')
+      metadata + template_without_metadata
+    else
+      lines = template_without_metadata.split("\n")
+      [ lines[0], metadata, lines[1..-1] ].flatten.join("\n")
+    end
+  end
+
+  def template_without_metadata
+    # Regexp like /.../m includes \n in .
+    template.sub(/^<%#\n.*?name.*?%>$\n?/m, '')
+  end
+
+  def filename
+    name.downcase.delete('-').gsub(/\s+/, '_') + '.erb'
   end
 
   private

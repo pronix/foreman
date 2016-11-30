@@ -9,7 +9,6 @@ module Foreman::Model
     before_validation :update_available_operating_systems unless Rails.env.test?
 
     alias_attribute :datacenter, :uuid
-    attr_accessible :datacenter, :ovirt_quota, :public_key, :uuid
 
     delegate :clusters, :quotas, :templates, :to => :client
 
@@ -100,7 +99,7 @@ module Foreman::Model
     end
 
     def max_memory
-      16*Foreman::SIZE[:giga]
+      16.gigabytes
     end
 
     def ovirt_quota=(ovirt_quota_id)
@@ -268,11 +267,11 @@ module Foreman::Model
     end
 
     def parse_vms_list_params(params)
-      max = (params['iDisplayLength'] || 10).to_i
+      max = (params['length'] || 10).to_i
       {
-        :search => params['sSearch'] || '',
+        :search => params['search']['value'] || '',
         :max => max,
-        :page => (params['iDisplayStart'].to_i / max)+1,
+        :page => (params['start'].to_i / max)+1,
         :without_details => true
       }
     end

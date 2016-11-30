@@ -42,11 +42,10 @@ module Orchestration::DNS
     results = {}
 
     DnsInterface::RECORD_TYPES.each do |record_type|
-      results[record_type] = true
       del_dns_record_safe(record_type)
 
       begin
-        results[record_type] = recreate_dns_record(record_type) if dns_feasible?(record_type)
+        results[record_type] = dns_feasible?(record_type) ? recreate_dns_record(record_type) : true
       rescue => e
         Foreman::Logging.exception "Failed to rebuild DNS record for #{name}(#{ip}/#{ip6})", e, :level => :error
         return false
@@ -97,7 +96,7 @@ module Orchestration::DNS
   end
 
   def pending_dns_record_changes?
-    old.ip != ip || old.ip6 != ip6 || old.hostname != hostname
+    !attr_equivalent?(old.ip, ip) || !attr_equivalent?(old.ip6, ip6) || !attr_equivalent?(old.hostname, hostname)
   end
 
   def dns_conflict_detected?

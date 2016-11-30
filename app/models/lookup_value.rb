@@ -1,20 +1,18 @@
 class LookupValue < ActiveRecord::Base
   include Authorizable
-
-  attr_accessible :match, :value, :lookup_key_id, :id, :_destroy, :host_or_hostgroup, :use_puppet_default, :lookup_key, :hidden_value
+  include PuppetLookupValueExtensions
 
   validates_lengths_from_database
-  audited :associated_with => :lookup_key, :allow_mass_assignment => true
+  audited :associated_with => :lookup_key
   delegate :hidden_value?, :hidden_value, :to => :lookup_key, :allow_nil => true
 
   belongs_to :lookup_key
   validates :match, :presence => true, :uniqueness => {:scope => :lookup_key_id}, :format => LookupKey::VALUE_REGEX
-  validate :value_present?
   delegate :key, :to => :lookup_key
   before_validation :sanitize_match
 
-  before_validation :validate_and_cast_value, :unless => Proc.new{|p| p.use_puppet_default }
-  validate :validate_value, :ensure_fqdn_exists, :ensure_hostgroup_exists
+  before_validation :validate_and_cast_value, :unless => Proc.new{|p| p.omit }
+  validate :validate_value, :ensure_fqdn_exists, :ensure_hostgroup_exists, :ensure_matcher_exists
 
   attr_accessor :host_or_hostgroup
 
@@ -26,10 +24,6 @@ class LookupValue < ActiveRecord::Base
   scoped_search :on => :value, :complete_value => true, :default_order => true
   scoped_search :on => :match, :complete_value => true
   scoped_search :in => :lookup_key, :on => :key, :rename => :lookup_key, :complete_value => true
-
-  def value_present?
-    self.errors.add(:value, :blank) if value.to_s.empty? && !use_puppet_default && lookup_key.puppet?
-  end
 
   def value=(val)
     if val.is_a?(HashWithIndifferentAccess)
@@ -81,8 +75,11 @@ class LookupValue < ActiveRecord::Base
     md = ensure_matcher(/fqdn=(.*)/)
     return md if md == true || md == false
     fqdn = md[1].split(LookupKey::KEY_DELM)[0]
-    return true if Host.unscoped.find_by_name(fqdn) || host_or_hostgroup.try(:new_record?)
-    errors.add(:match, _("%{match} does not match an existing host") % { :match => "fqdn=#{fqdn}" }) and return false
+    return true if Host.unscoped.find_by_name(fqdn) || host_or_hostgroup.try(:new_record?) ||
+        (host_or_hostgroup.present? && host_or_hostgroup.type_changed? && host_or_hostgroup.type == "Host::Managed")
+    errors.add(:match, _("%{match} does not match an existing host") % { :match => "fqdn=#{fqdn}" })
+
+    false
   end
 
   def ensure_hostgroup_exists
@@ -90,7 +87,9 @@ class LookupValue < ActiveRecord::Base
     return md if md == true || md == false
     hostgroup = md[1].split(LookupKey::KEY_DELM)[0]
     return true if Hostgroup.unscoped.find_by_name(hostgroup) || Hostgroup.unscoped.find_by_title(hostgroup) || host_or_hostgroup.try(:new_record?)
-    errors.add(:match, _("%{match} does not match an existing host group") % { :match => "hostgroup=#{hostgroup}" }) and return false
+    errors.add(:match, _("%{match} does not match an existing host group") % { :match => "hostgroup=#{hostgroup}" })
+
+    false
   end
 
   def ensure_matcher(match_type)
@@ -98,6 +97,18 @@ class LookupValue < ActiveRecord::Base
     matcher = match.match(match_type)
     return true unless matcher
     matcher
+  end
+
+  def ensure_matcher_exists
+    return false if match.blank?
+    key_elements = []
+    match.split(LookupKey::KEY_DELM).each do |m|
+      key_elements << m.split(LookupKey::EQ_DELM).first
+    end
+
+    unless lookup_key.path_elements.include?(key_elements)
+      errors.add(:match, _("%{key} does not exist in order field") % { :key => key_elements.join(',') })
+    end
   end
 
   def skip_strip_attrs

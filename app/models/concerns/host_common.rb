@@ -4,19 +4,28 @@ require 'securerandom'
 # mostly for template rendering consistency
 module HostCommon
   extend ActiveSupport::Concern
+  include BelongsToProxies
 
   included do
+    belongs_to_proxy :puppet_proxy,
+      :feature => N_('Puppet'),
+      :label => N_('Puppet Master'),
+      :description => N_('Use this puppet server as an initial Puppet Server or to execute puppet runs'),
+      :api_description => N_('Puppet proxy ID')
+
+    belongs_to_proxy :puppet_ca_proxy,
+      :feature => 'Puppet CA',
+      :label => N_('Puppet CA'),
+      :description => N_('Use this puppet server as a CA server'),
+      :api_description => N_('Puppet CA proxy ID')
+
     belongs_to :architecture
     belongs_to :environment
     belongs_to :operatingsystem
     belongs_to :medium
     belongs_to :ptable
-    belongs_to :puppet_proxy,    :class_name => "SmartProxy"
-    belongs_to :puppet_ca_proxy, :class_name => "SmartProxy"
     belongs_to :realm
     belongs_to :compute_profile
-    validates :puppet_ca_proxy, :proxy_features => { :feature => "Puppet CA", :message => N_("does not have the Puppet CA feature") }
-    validates :puppet_proxy, :proxy_features => { :feature => "Puppet", :message => N_("does not have the Puppet feature") }
 
     before_save :check_puppet_ca_proxy_is_required?, :crypt_root_pass
     has_many :host_config_groups, :as => :host
@@ -29,10 +38,6 @@ module HostCommon
     has_many :lookup_values, :primary_key => :lookup_value_matcher, :foreign_key => :match, :dependent => :destroy
     # See "def lookup_values_attributes=" under, for the implementation of accepts_nested_attributes_for :lookup_values
     accepts_nested_attributes_for :lookup_values
-
-    attr_accessible :compute_profile, :compute_profile_id, :compute_profile_name,
-      :grub_pass, :image_id, :image_name, :image_file, :lookup_value_matcher,
-      :lookup_values_attributes, :use_image
 
     before_save :set_lookup_value_matcher
 
@@ -68,7 +73,7 @@ module HostCommon
   end
 
   def puppetca_exists?
-    !!(puppet_ca_proxy and puppet_ca_proxy.url.present?)
+    !!(puppet_ca_proxy && puppet_ca_proxy.url.present?)
   end
 
   # no need to store anything in the db if the entry is plain "puppet"

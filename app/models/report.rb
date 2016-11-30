@@ -5,8 +5,6 @@ class Report < ActiveRecord::Base
   include Authorizable
   include ConfigurationStatusScopedSearch
 
-  attr_accessible :host, :reported_at, :status, :metrics
-
   validates_lengths_from_database
   belongs_to_host
   has_many :messages, :through => :logs
@@ -45,6 +43,10 @@ class Report < ActiveRecord::Base
 
   # with_changes
   scope :interesting, -> { where("status <> 0") }
+
+  def self.humanized_name
+    N_('Report')
+  end
 
   # extracts serialized metrics and keep them as a hash_with_indifferent_access
   def metrics

@@ -1,11 +1,7 @@
 class Image < ActiveRecord::Base
   include Authorizable
 
-  attr_accessible :name, :compute_resource_id, :compute_resource_name, :operatingsystem_id,
-    :operatingsystem_name, :architecture_id, :architecture_name, :username, :password, :uuid,
-    :user_data, :iam_role
-
-  audited :allow_mass_assignment => true
+  audited
 
   belongs_to :operatingsystem
   belongs_to :compute_resource
@@ -18,7 +14,7 @@ class Image < ActiveRecord::Base
   validate :uuid_exists?
 
   scoped_search :on => [:name, :username], :complete_value => true
-  scoped_search :in => :compute_resources, :on => :name, :complete_value => :true, :rename => "compute_resource"
+  scoped_search :in => :compute_resource, :on => :name, :complete_value => :true, :rename => "compute_resource"
   scoped_search :in => :architecture, :on => :id, :rename => "architecture", :complete_enabled => false, :only_explicit => true
   scoped_search :in => :operatingsystem, :on => :id, :rename => "operatingsystem", :complete_enabled => false, :only_explicit => true
   scoped_search :on => :user_data, :complete_value => {:true => true, :false => false}
