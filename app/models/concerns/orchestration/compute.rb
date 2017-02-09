@@ -212,8 +212,8 @@ module Orchestration::Compute
 
   def compute_update_required?
     return false unless compute_resource.supports_update? && !compute_attributes.nil?
-    old.compute_attributes = compute_resource.find_vm_by_uuid(uuid).attributes
-    compute_resource.update_required?(old.compute_attributes, compute_attributes.symbolize_keys)
+    old.compute_attributes = compute_resource.vm_compute_attributes_for(uuid)
+    compute_resource.update_required?(old.compute_attributes, compute_attributes)
   end
 
   def find_image
@@ -328,6 +328,7 @@ module Orchestration::Compute
       mac = selected_nic.send(fog_attr)
       logger.debug "Orchestration::Compute: nic #{nic.inspect} assigned to #{selected_nic.inspect}"
       nic.mac = mac
+      nic.reset_dhcp_record_cache if nic.respond_to?(:reset_dhcp_record_cache) # delete the cached dhcp_record with old MAC on managed nics
       fog_nics.delete(selected_nic) # don't use the same fog nic twice
 
       # In future, we probably want to skip validation of macs/ips on the Nic

@@ -235,10 +235,10 @@ class OrganizationsControllerTest < ActionController::TestCase
     organization = taxonomies(:organization2)
     organization.update_attributes(:smart_proxy_ids => [ smart_proxies(:one).id ])
     saved_organization = Organization.find_by_id(organization.id)
-    assert_equal saved_organization.smart_proxy_ids.count, 1
-    put :update, { :id => organization.id, :organization => {:smart_proxy_ids => []}}, set_session_user
+    assert_equal 1, saved_organization.smart_proxy_ids.count
+    put :update, { :id => organization.id, :organization => {:smart_proxy_ids => [""]}}, set_session_user
     updated_organization = Organization.find_by_id(organization.id)
-    assert_equal updated_organization.smart_proxy_ids.count, 0
+    assert_equal 0, updated_organization.smart_proxy_ids.count
   end
 
   context 'wizard' do
@@ -272,5 +272,12 @@ class OrganizationsControllerTest < ActionController::TestCase
       assert_redirected_to /edit/
       Host.unstub(:authorized)
     end
+  end
+
+  test 'should switch to newly created org' do
+    name = 'test-org'
+    put :create, { :commit => "Submit", :organization => { :name => name } }, set_session_user
+    new_org = Organization.find_by :name => name
+    assert_equal new_org.id, session[:organization_id]
   end
 end

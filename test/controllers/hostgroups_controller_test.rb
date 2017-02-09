@@ -141,16 +141,38 @@ class HostgroupsControllerTest < ActionController::TestCase
     assert_template :partial => "common/os_selection/_architecture"
   end
 
-  test "should return the selected puppet classes on environment change" do
-    env = FactoryGirl.create(:environment)
-    klass = FactoryGirl.create(:puppetclass)
-    hg = FactoryGirl.create(:hostgroup, :environment => env)
-    assert_equal 0, hg.puppetclasses.length
-    post :environment_selected, { :id => hg.id,
-                                  :hostgroup => { :name => hg.name,
-                                                  :puppetclass_ids => [klass.id],
-                                                  :environment_id => "" }}, set_session_user
-    assert_equal(1, (assigns(:hostgroup).puppetclasses.length))
+  describe '#environment_selected' do
+    setup do
+      @environment = FactoryGirl.create(:environment)
+      @puppetclass = FactoryGirl.create(:puppetclass)
+      @hostgroup = FactoryGirl.create(:hostgroup, :environment => @environment)
+      @params = {
+        id: @hostgroup.id,
+        hostgroup: {
+          name: @hostgroup.name,
+          environment_id: "",
+          puppetclass_ids: [@puppetclass.id]
+        }
+      }
+    end
+
+    test "should return the selected puppet classes on environment change" do
+      assert_equal 0, @hostgroup.puppetclasses.length
+
+      post :environment_selected, @params, set_session_user
+      assert_equal(1, (assigns(:hostgroup).puppetclasses.length))
+      assert_include assigns(:hostgroup).puppetclasses, @puppetclass
+    end
+
+    context 'no environment_id param is set' do
+      test 'it will take the hostgroup params environment_id' do
+        other_environment = FactoryGirl.create(:environment)
+        @params[:hostgroup][:environment_id] = other_environment.id
+
+        post :environment_selected, @params, set_session_user
+        assert_equal assigns(:environment), other_environment
+      end
+    end
   end
 
   test 'user with view_params rights should see parameters in a hostgroup' do
@@ -202,12 +224,12 @@ class HostgroupsControllerTest < ActionController::TestCase
         assert_equal "original", child.parameters["x"]
       end
       post :update, {"id" => child.id, "hostgroup" => {"name" => child.name,
-                                                       :group_parameters_attributes => {"0" => {:name => "x", :value => nil, :_destroy => ""},
+                                                       :group_parameters_attributes => {"0" => {:name => "x", :value => "", :_destroy => ""},
                                                                                         "1" => {:name => "y", :value => "overridden", :_destroy => ""}}}}, set_session_user
       assert_redirected_to hostgroups_url
       child.reload
       assert_equal "overridden", child.parameters["y"]
-      assert_equal nil, child.parameters["x"]
+      assert_equal "", child.parameters["x"]
     end
 
     it "changes the hostgroup's parent and check the parameters are updated" do

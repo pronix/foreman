@@ -12,6 +12,7 @@ class ActiveSupport::TestCase
 
   teardown :reconsider_gc_deferment
   teardown :clear_current_user
+  teardown :clear_current_taxonomies
   teardown :reset_setting_cache
 
   DEFERRED_GC_THRESHOLD = (ENV['DEFER_GC'] || 1.0).to_f
@@ -41,6 +42,11 @@ class ActiveSupport::TestCase
 
   def clear_current_user
     User.current = nil
+  end
+
+  def clear_current_taxonomies
+    Location.current = nil
+    Organization.current = nil
   end
 
   def reset_setting_cache
@@ -144,7 +150,6 @@ class ActiveSupport::TestCase
 
   def self.disable_orchestration
     #This disables the DNS/DHCP orchestration
-    Host.any_instance.stubs(:boot_server).returns("boot_server")
     Resolv::DNS.any_instance.stubs(:getname).returns("foo.fqdn")
     Resolv::DNS.any_instance.stubs(:getaddress).returns("127.0.0.1")
     Resolv::DNS.any_instance.stubs(:getresources).returns([OpenStruct.new(:mname => 'foo', :name => 'bar')])

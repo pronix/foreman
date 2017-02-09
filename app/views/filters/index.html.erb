@@ -4,20 +4,20 @@
      title _("Filters")
    end %>
 
-<% title_actions new_link(_("New filter"), { :controller => :filters, :role_id => @role }),
+<% title_actions new_link(_("Create Filter"), { :controller => :filters, :role_id => @role }),
                  documentation_button('4.1.2RolesandPermissions') %>
 
 <table class="<%= table_css_classes %>" <%= "data-table='inline'".html_safe if params[:paginate] == 'client' %> >
   <thead>
     <tr>
       <% unless params[:role_id] %>
-        <th><%= sort :role, :as => _("Role") %></th>
+        <th><%= sort :role, :as => _("Role"), :permitted => [:role_id] %></th>
       <% end %>
-      <th><%= sort :resource, :as => s_("Filter|Resource") %></th>
+      <th><%= sort :resource, :as => s_("Filter|Resource"), :permitted => [:role_id] %></th>
       <th><%= s_("Filter|Permissions") %></th>
-      <th><%= sort :search, :as => s_("Filter|Unlimited") %></th>
-      <th><%= sort :search, :as => s_("Filter|Override") %></th>
-      <th><%= sort :search, :as => s_("Filter|Search") %></th>
+      <th><%= sort :search, :as => s_("Filter|Unlimited"), :permitted => [:role_id] %></th>
+      <th><%= sort :search, :as => s_("Filter|Override"), :permitted => [:role_id] %></th>
+      <th><%= sort :search, :as => s_("Filter|Search"), :permitted => [:role_id] %></th>
       <th><%= _('Actions') %></th>
     </tr>
   </thead>

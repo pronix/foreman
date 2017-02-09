@@ -30,9 +30,7 @@ module ComputeResourcesVmsHelper
         value = @vm.send(method) rescue nil
         case value
         when Array
-          #TODO in 4.0 #try will return nil if the method doesn't exist (instead of raising NoMethodError)
-          # we can drop rescues then.
-          value.map{|v| (v.try(:name) rescue nil) || (v.try(:to_s) rescue nil) || v}.to_sentence
+          value.map{|v| v.try(:name) || v.try(:to_s) || v}.to_sentence
         when Fog::Time, Time
           _("%s ago") % time_ago_in_words(value)
         when nil
@@ -77,6 +75,16 @@ module ComputeResourcesVmsHelper
 
   def vsphere_datastores(compute)
     compute.datastores.map { |datastore| [datastore_stats(datastore), datastore.name] }
+  end
+
+  def vsphere_networks(compute_resource)
+    networks = compute_resource.networks
+    networks.map do |net|
+      net_id = net.id
+      net_name = net.name
+      net_name += " (#{net.virtualswitch})" if net.virtualswitch
+      [net_id, net_name]
+    end
   end
 
   def datastore_stats(datastore)
@@ -151,9 +159,9 @@ module ComputeResourcesVmsHelper
     host.try(:new_record?)
   end
 
-  def vsphere_resource_pools(form, compute_resource)
+  def vsphere_resource_pools(form, compute_resource, new_host = false)
     resource_pools = compute_resource.available_resource_pools(:cluster_id => form.object.cluster) rescue []
-    selectable_f form, :resource_pool, resource_pools, { }, :class => "col-md-2", :label => _('Resource pool')
+    selectable_f form, :resource_pool, resource_pools, { }, :class => "col-md-2", :label => _('Resource pool'), :disabled => !new_host
   end
 
   def vms_table

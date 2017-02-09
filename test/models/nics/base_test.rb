@@ -61,6 +61,20 @@ class Nic::BaseTest < ActiveSupport::TestCase
     assert_includes nic.errors.keys, :subnet6
   end
 
+  context '#matches_subnet?' do
+    let(:subnet) { FactoryGirl.build(:subnet_ipv4, :network => '10.10.10.0') }
+    let(:nic) { FactoryGirl.build(:nic_base, :ip => '10.10.10.1', :subnet => subnet) }
+
+    test 'is true when subnet contains ip' do
+      assert nic.matches_subnet?(:ip, :subnet)
+    end
+
+    test 'is false when subnet does not contain ip' do
+      nic.ip = '192.168.1.1'
+      refute nic.matches_subnet?(:ip, :subnet)
+    end
+  end
+
   context 'there is already an interface with a MAC and IP' do
     let(:host) { FactoryGirl.create(:host, :managed, :with_ipv6) }
 
@@ -176,5 +190,10 @@ class Nic::BaseTest < ActiveSupport::TestCase
       assert_valid nic # normalization is done before validation
       assert_equal 'aa:bb:cc:dd:ee:ff', nic.mac
     end
+  end
+
+  test '#children_mac_addresses defaults to empty array' do
+    nic = FactoryGirl.build(:nic_base)
+    assert_equal [], nic.children_mac_addresses
   end
 end

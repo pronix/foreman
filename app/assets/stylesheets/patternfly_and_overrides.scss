@@ -315,3 +315,46 @@ a.btn-info span{
   max-height: 80vh;
   overflow-y: auto;
 }
+// Color origin: pf-orange-400
+.pficon-ok.warn:before {
+  color: #ec7a08;
+}
+
+.paneless {
+  .panel {
+    box-shadow: none;
+  }
+
+  .panel-title {
+    font-size: inherit;
+  }
+
+  .panel-heading + .panel-collapse .panel-body {
+    border: none;
+    padding: 0;
+  }
+
+  .panel-heading {
+    background: none;
+    border: none;
+    padding-left: inherit;
+    padding-right: inherit;
+
+    a {
+      font-weight: inherit;
+      font-size: inherit;
+    }
+  }
+}
+
+// gridster on dashboard conflicts with notifications drawer
+.gridster .gs-w {
+  z-index: auto !important;
+}
+
+// workaround to patternfly css after removing class navbar-pf from navbar
+// to retain original navbar height
+.navbar-outer .drawer-pf {
+  height: calc(100vh - 46px);
+  top: 26px;
+}

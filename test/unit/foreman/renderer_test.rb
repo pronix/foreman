@@ -53,7 +53,7 @@ class RendererTest < ActiveSupport::TestCase
 
   test '#foreman_url can be rendered even outside of controller context' do
     assert_nothing_raised do
-      assert_match /\/unattended\/built/, @renderer.foreman_url
+      assert_match /\/unattended\/built/, @renderer.foreman_url('built')
     end
   end
 
@@ -159,6 +159,46 @@ class RendererTest < ActiveSupport::TestCase
       assert_equal 'content', tmpl
     end
 
+    test "#{renderer_name} should render a snippet with variables" do
+      send "setup_#{renderer_name}"
+      snippet = FactoryGirl.create(:provisioning_template, :snippet, :template => "A <%= @b + ' ' + @c -%> D")
+      tmpl = @renderer.snippet(snippet.name, :variables => { :b => 'B', :c => 'C' })
+      assert_equal 'A B C D', tmpl
+    end
+
+    test "#{renderer_name} should render a snippet_if_exists with variables" do
+      send "setup_#{renderer_name}"
+      snippet = FactoryGirl.create(:provisioning_template, :snippet, :template => "A <%= @b + ' ' + @c -%> D")
+      tmpl = @renderer.snippet_if_exists(snippet.name, :variables => { :b => 'B', :c => 'C' })
+      assert_equal 'A B C D', tmpl
+    end
+
+    test "#{renderer_name} should render a snippets with variables" do
+      send "setup_#{renderer_name}"
+      snippet = FactoryGirl.create(:provisioning_template, :snippet, :template => "A <%= @b + ' ' + @c -%> D")
+      tmpl = @renderer.snippets(snippet.name, :variables => { :b => 'B', :c => 'C' })
+      assert_equal 'A B C D', tmpl
+    end
+
+    test "#{renderer_name} should render a save_to_file macro" do
+      assert_renders('<%= save_to_file("/etc/puppet/puppet.conf", "[main]\nserver=example.com\n") %>', "cat << EOF > /etc/puppet/puppet.conf\n[main]\nserver=example.com\nEOF", nil)
+    end
+
+    test "#{renderer_name} should render a templates_used" do
+      send "setup_#{renderer_name}"
+      @renderer.host = FactoryGirl.build(
+        :host,
+        :operatingsystem => operatingsystems(:redhat)
+      )
+      template = mock('template')
+      template.stubs(:template).returns('<%= @host.templates_used %>')
+      assert_nothing_raised do
+        content = @renderer.unattended_render(template)
+        assert_match(/#{@renderer.host.provisioning_template(:kind => 'provision')}/, content)
+        assert_match(/#{@renderer.host.provisioning_template(:kind => 'script')}/, content)
+      end
+    end
+
     test "#{renderer_name} should not raise error when snippet is not found" do
       send "setup_#{renderer_name}"
       Template.expects(:where).with(:name => "test", :snippet => true).returns([])
@@ -220,5 +260,54 @@ class RendererTest < ActiveSupport::TestCase
   test '#allowed_variables_mapping loads instance variables' do
     @renderer.instance_variable_set '@whatever_random_name', 'has_value'
     assert_equal({ :whatever_random_name => 'has_value' }, @renderer.send(:allowed_variables_mapping, [ :whatever_random_name ]))
+  end
+
+  test 'should render puppetclasses using host_puppetclasses helper' do
+    @renderer.host = FactoryGirl.create(:host, :with_puppetclass)
+    assert @renderer.host_puppet_classes
+  end
+
+  test 'should render host param using "host_param" helper' do
+    @renderer.host = FactoryGirl.create(:host, :with_puppet)
+    assert @renderer.host_param('test').present?
+  end
+
+  test 'should have host_param_true? helper' do
+    @renderer.host = FactoryGirl.create(:host, :with_puppet)
+    FactoryGirl.create(:parameter, :name => 'true_param', :value => "true")
+    assert @renderer.host_param_true?('true_param')
+  end
+
+  test 'should have host_param_false? helper' do
+    @renderer.host = FactoryGirl.create(:host, :with_puppet)
+    FactoryGirl.create(:parameter, :name => 'false_param', :value => "false")
+    assert @renderer.host_param_false?('false_param')
+  end
+
+  test 'should have host_enc helper' do
+    @renderer.host = FactoryGirl.create(:host, :with_puppet)
+    assert @renderer.host_enc
+  end
+
+  test "should find path in host_enc" do
+    host = FactoryGirl.create(:host, :with_puppet)
+    @renderer.host = host
+    assert_equal host.puppetmaster, @renderer.host_enc('parameters', 'puppetmaster')
+  end
+
+  test 'templates_used is allowed to render for host' do
+    assert Safemode.find_jail_class(Host::Managed).allowed? :templates_used
+  end
+
+  private
+
+  def assert_renders(template_content, output, host)
+    @renderer.host = host
+    template = mock('template')
+    template.stubs(:template).returns(template_content)
+    assert_nothing_raised do
+      content = @renderer.unattended_render(template)
+      assert_equal(output, content)
+    end
   end
 end

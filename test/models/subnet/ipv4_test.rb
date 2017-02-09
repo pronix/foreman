@@ -13,6 +13,7 @@ class Subnet::Ipv4Test < ActiveSupport::TestCase
   should_not allow_value('300.300.300.0').for(:network)
   should_not allow_value('100.101.102').for(:network)
   should allow_value('100.101.102.103.').for(:network) # clean invalid addresses
+  should allow_value('100.101.102.25555').for(:network) # clean invalid addresses
   # Test smart proxies from Subnet are inherited
   should belong_to(:tftp)
   should belong_to(:dns)
@@ -117,6 +118,19 @@ class Subnet::Ipv4Test < ActiveSupport::TestCase
     assert_includes subnet.known_ips, '192.168.2.3'
     assert_includes subnet.known_ips, '192.168.2.4'
     assert_equal 4, subnet.known_ips.size
+  end
+
+  test "#known_ips returns host/interface IPs after creation" do
+    subnet = FactoryGirl.create(:subnet_ipv4, :name => 'my_subnet', :network => '192.168.2.0', :from => '192.168.2.10', :to => '192.168.2.12',
+                                :dns_primary => '192.168.2.2', :gateway => '192.168.2.3', :ipam => IPAM::MODES[:db])
+    refute_includes subnet.known_ips, '192.168.2.10'
+    refute_includes subnet.known_ips, '192.168.2.11'
+
+    host = FactoryGirl.create(:host, :subnet => subnet, :ip => '192.168.2.10')
+    Nic::Managed.create :mac => "00:00:01:10:00:00", :host => host, :subnet => subnet, :name => "", :ip => '192.168.2.11'
+
+    assert_includes subnet.known_ips, '192.168.2.10'
+    assert_includes subnet.known_ips, '192.168.2.11'
   end
 
   context 'import subnets' do

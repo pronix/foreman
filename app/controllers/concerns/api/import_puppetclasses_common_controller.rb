@@ -16,7 +16,6 @@ module Api::ImportPuppetclassesCommonController
   param :smart_proxy_id, String, :required => false
   param :environment_id, String, :required => false
   param :dryrun, :bool, :required => false
-  param :background, :bool, :required => false
   param :except, String, :required => false, :desc => N_("Optional comma-delimited string containing either 'new', 'updated', or 'obsolete' that is used to limit the imported Puppet classes")
 
   def import_puppetclasses
@@ -28,28 +27,22 @@ module Api::ImportPuppetclassesCommonController
     if params[:except].present?
       kinds = params[:except].split(',')
       kinds.each do |kind|
-        @changed[kind] = {} if ["new", "obsolete", "updated"].include?(kind)
+        @changed[kind] = {} if ["new", "obsolete", "updated", "ignored"].include?(kind)
       end
     end
 
     # DRYRUN - /import_puppetclasses?dryrun - do not run PuppetClassImporter
     rabl_template = @environment ? 'show' : 'index'
     if params.key?('dryrun') && !['false', false].include?(params['dryrun'])
-      render("api/v1/import_puppetclasses/#{rabl_template}", :layout => "api/layouts/import_puppetclasses_layout")
+      render("api/v#{api_version}/import_puppetclasses/#{rabl_template}", :layout => "api/layouts/import_puppetclasses_layout")
       return
     end
 
     # RUN PuppetClassImporter
-    background = params.key?(:background) && !['false', false].include?(params[:background])
-    begin
-      task = ForemanTasks.trigger_task(background, ::Actions::Foreman::PuppetClass::Import, :changed => @changed)
-      if background
-        process_success task
-      else
-        render("api/v1/import_puppetclasses/#{rabl_template}", :layout => "api/layouts/import_puppetclasses_layout")
-      end
-    rescue ForemanTasks::TaskError => e
-      render :json => { :message => _("Failed to update the environments and Puppet classes from the on-disk puppet installation: %s") % e.to_s }, :status => :internal_server_error
+    if (errors = ::PuppetClassImporter.new.obsolete_and_new(@changed)).empty?
+      render("api/v#{api_version}/import_puppetclasses/#{rabl_template}", :layout => "api/layouts/import_puppetclasses_layout")
+    else
+      render :json => {:message => _("Failed to update the environments and Puppet classes from the on-disk puppet installation: %s") % errors.join(", ")}, :status => :internal_server_error
     end
   end
 
@@ -67,7 +60,7 @@ module Api::ImportPuppetclassesCommonController
       # check if environemnt id passed in URL is name of NEW environment in puppetmaster that doesn't exist in db
       if @environment || (@changed['new'].keys.include?(@env_id) && (@environment ||= OpenStruct.new(:name => @env_id)))
         # only return :keys equal to @environment in @changed hash
-        ["new", "obsolete", "updated"].each do |kind|
+        ["new", "obsolete", "updated", "ignored"].each do |kind|
           @changed[kind].slice!(@environment.name) unless @changed[kind].empty?
         end
       end
@@ -84,7 +77,7 @@ module Api::ImportPuppetclassesCommonController
     end
 
     # PuppetClassImporter expects [kind][env] to be in json format
-    ["new", "obsolete", "updated"].each do |kind|
+    ["new", "obsolete", "updated", "ignored"].each do |kind|
       unless (envs = @changed[kind]).empty?
         envs.keys.sort.each do |env|
           @changed[kind][env] = @changed[kind][env].to_json
@@ -93,7 +86,9 @@ module Api::ImportPuppetclassesCommonController
     end
 
     # @environments is used in import_puppletclasses/index.json.rabl
-    environment_names = (@changed["new"].keys + @changed["obsolete"].keys + @changed["updated"].keys).uniq.sort
+    environment_names = (@changed["new"].keys + @changed["obsolete"].keys +
+                         @changed["updated"].keys + @changed["ignored"].keys).uniq.sort
+
     @environments = environment_names.map do |name|
       OpenStruct.new(:name => name)
     end

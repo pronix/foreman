@@ -114,8 +114,13 @@ class ApplicationController < ActionController::Base
   end
 
   def smart_proxy_exception(exception = nil)
-    process_error(:redirect => :back, :error_msg => exception.message)
     Foreman::Logging.exception("ProxyAPI operation FAILED", exception)
+    if request.headers.include? 'HTTP_REFERER'
+      process_error(:redirect => :back, :error_msg => exception.message)
+    else
+      process_error(:render => { :text => exception.message },
+                    :error_msg => exception.message)
+    end
   end
 
   # this method sets the Current user to be the Admin
@@ -237,10 +242,10 @@ class ApplicationController < ActionController::Base
   def render_403(msg = nil)
     if msg.nil?
       @missing_permissions = Foreman::AccessControl.permissions_for_controller_action(path_to_authenticate)
-      Foreman::Logging.logger('permissions').debug "rendering 403 because of missing permission #{@missing_permissions.map(&:name).join(', ')}"
+      Foreman::Logging.logger('permissions').info "rendering 403 because of missing permission #{@missing_permissions.map(&:name).join(', ')}"
     else
       @missing_permissions = []
-      Foreman::Logging.logger('permissions').debug msg
+      Foreman::Logging.logger('permissions').info msg
     end
 
     respond_to do |format|

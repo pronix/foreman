@@ -8,7 +8,7 @@ class Usergroup < ActiveRecord::Base
   validates_lengths_from_database
   before_destroy EnsureNotUsedBy.new(:hosts), :ensure_last_admin_group_is_not_deleted
 
-  has_many :user_roles, -> { where(:owner_type => 'Usergroup') }, :dependent => :destroy, :foreign_key => 'owner_id'
+  has_many :user_roles, :dependent => :destroy, :as => :owner
   has_many :roles, :through => :user_roles, :dependent => :destroy
 
   has_many :usergroup_members, :dependent => :destroy
@@ -31,8 +31,8 @@ class Usergroup < ActiveRecord::Base
   default_scope -> { order('usergroups.name') }
   scope :visible, -> { }
   scoped_search :on => :name, :complete_value => :true
-  scoped_search :in => :roles, :on => :name, :rename => :role, :complete_value => true
-  scoped_search :in => :roles, :on => :id, :rename => :role_id, :complete_enabled => false, :only_explicit => true
+  scoped_search :relation => :roles, :on => :name, :rename => :role, :complete_value => true
+  scoped_search :relation => :roles, :on => :id, :rename => :role_id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
   validate :ensure_uniq_name, :ensure_last_admin_remains_admin
 
   accepts_nested_attributes_for :external_usergroups, :reject_if => ->(a) { a[:name].blank? }, :allow_destroy => true

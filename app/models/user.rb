@@ -16,7 +16,9 @@ class User < ActiveRecord::Base
 
   validates_lengths_from_database :except => [:firstname, :lastname, :format, :mail, :login]
   attr_accessor :password, :password_confirmation, :current_password
+  attr_reader :password_changed
   after_save :ensure_default_role
+  after_save :unset_password_changed
   before_destroy EnsureNotUsedBy.new([:direct_hosts, :hosts]), :ensure_hidden_users_are_not_deleted, :ensure_last_admin_is_not_deleted
 
   belongs_to :auth_source
@@ -26,7 +28,7 @@ class User < ActiveRecord::Base
   has_many :auditable_changes, :class_name => '::Audit', :as => :user
   has_many :direct_hosts,      :class_name => 'Host',    :as => :owner
   has_many :usergroup_member,  :dependent => :destroy,   :as => :member
-  has_many :user_roles,        -> { where(:owner_type => 'User') }, :dependent => :destroy, :foreign_key => 'owner_id'
+  has_many :user_roles,        :dependent => :destroy, :as => :owner
   has_many :cached_user_roles, :dependent => :destroy
   has_many :cached_usergroups, :through => :cached_usergroup_members, :source => :usergroup
   has_many :cached_roles,      -> { uniq }, :through => :cached_user_roles, :source => :role
@@ -88,6 +90,7 @@ class User < ActiveRecord::Base
   before_validation :verify_current_password, :if => Proc.new {|user| user == User.current},
                     :unless => Proc.new {|user| user.password.empty?}
   before_validation :prepare_password, :normalize_mail
+  before_validation :set_password_changed, :if => Proc.new { |user| user.manage_password? && user.password.present? }
   before_save       :set_lower_login
 
   after_create :welcome_mail
@@ -100,9 +103,9 @@ class User < ActiveRecord::Base
   scoped_search :on => :description, :complete_value => false
   scoped_search :on => :admin, :complete_value => { :true => true, :false => false }, :ext_method => :search_by_admin
   scoped_search :on => :last_login_on, :complete_value => :true, :only_explicit => true
-  scoped_search :in => :roles, :on => :name, :rename => :role, :complete_value => true
-  scoped_search :in => :roles, :on => :id, :rename => :role_id, :complete_enabled => false, :only_explicit => true
-  scoped_search :in => :cached_usergroups, :on => :name, :rename => :usergroup, :complete_value => true
+  scoped_search :relation => :roles, :on => :name, :rename => :role, :complete_value => true
+  scoped_search :relation => :roles, :on => :id, :rename => :role_id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
+  scoped_search :relation => :cached_usergroups, :on => :name, :rename => :usergroup, :complete_value => true
 
   default_scope lambda {
     with_taxonomy_scope do
@@ -321,7 +324,7 @@ class User < ActiveRecord::Base
   # * a permission Symbol (eg. :edit_project)
   def allowed_to?(action)
     return true if admin?
-    if action.is_a? Hash
+    if action.is_a?(Hash) || action.is_a?(ActionController::Parameters)
       action = Foreman::AccessControl.normalize_path_hash(action)
       return true if editing_self?(action)
     end
@@ -352,7 +355,7 @@ class User < ActiveRecord::Base
   end
 
   def taxonomy_foreign_conditions
-    { :owner_id => id }
+    { :owner_id => id, :owner_type => 'User' }
   end
 
   def set_current_taxonomies
@@ -447,6 +450,19 @@ class User < ActiveRecord::Base
     user
   end
 
+  def password_changed_changed?
+    changed.include?('password_changed')
+  end
+
+  def set_password_changed
+    @password_changed = true
+    attribute_will_change!('password_changed')
+  end
+
+  def unset_password_changed
+    @password_changed = false
+  end
+
   private
 
   def prepare_password
@@ -470,7 +486,7 @@ class User < ActiveRecord::Base
   end
 
   def normalize_mail
-    self.mail.strip! unless mail.blank?
+    self.mail = mail.strip unless mail.blank?
   end
 
   def reject_empty_intervals(attributes)

@@ -4,7 +4,8 @@ require 'foreman/access_control'
 Foreman::AccessControl.map do |permission_set|
   permission_set.security_block :public do |map|
     map.permission :user_logout, { :users => [:logout] }, :public => true
-    map.permission :my_account, { :users => [:edit] }, :public => true
+    map.permission :my_account, { :users => [:edit],
+      :notification_recipients => [:index, :update, :destroy] }, :public => true
     map.permission :api_status, { :"api/v1/home" => [:status], :"api/v2/home" => [:status]}, :public => true
     map.permission :about_index, { :about => [:index] }, :public => true
   end
@@ -80,12 +81,12 @@ Foreman::AccessControl.map do |permission_set|
 
   permission_set.security_block :compute_resources do |map|
     ajax_actions = [:test_connection]
-    map.permission :view_compute_resources, {:compute_resources => [:index, :show, :auto_complete_search, :ping, :available_images],
+    map.permission :view_compute_resources, {:compute_resources => [:index, :show, :auto_complete_search, :ping, :available_images, :refresh_cache],
                                                 :"api/v1/compute_resources" => [:index, :show],
                                                 :"api/v2/compute_resources" => [:index, :show, :available_images, :available_clusters, :available_folders,
                                                                                 :available_flavors, :available_networks, :available_resource_pools,
                                                                                 :available_security_groups, :available_storage_domains, :available_zones,
-                                                                                :available_storage_pods]
+                                                                                :available_storage_pods, :refresh_cache]
     }
     map.permission :create_compute_resources, {:compute_resources => [:new, :create].push(*ajax_actions),
                                                 :"api/v1/compute_resources" => [:create],
@@ -439,6 +440,11 @@ Foreman::AccessControl.map do |permission_set|
     }
   end
 
+  permission_set.security_block :key_pairs do |map|
+    map.permission :view_keypairs, {:key_pairs => [:index, :show]}
+    map.permission :destroy_keypairs, {:key_pairs => [:destroy, :create]}
+  end
+
   if SETTINGS[:locations_enabled]
     permission_set.security_block :locations do |map|
       map.permission :view_locations, {:locations =>  [:index, :show, :auto_complete_search],
@@ -719,10 +725,6 @@ Foreman::AccessControl.map do |permission_set|
                    :users => [:destroy],
                    :"api/v1/users" => [:destroy],
                    :"api/v2/users" => [:destroy]
-  end
-
-  permission_set.security_block :settings_menu do |map|
-    map.permission :access_settings,  {:home => [:settings]}
   end
 
   permission_set.security_block :dashboard do |map|

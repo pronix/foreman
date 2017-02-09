@@ -118,7 +118,7 @@ module Host
       raise ::Foreman::Exception.new('Host is pending for Build') if build?
       facts = facts.with_indifferent_access
 
-      facts[:domain].try(:downcase!)
+      facts[:domain] = facts[:domain].downcase if facts[:domain].present?
 
       time = facts[:_timestamp]
       time = time.to_time if time.is_a?(String)
@@ -154,7 +154,6 @@ module Host
       build_required_interfaces(:managed => false)
       set_non_empty_values(parser, attributes_to_import_from_facts)
       set_interfaces(parser) if parser.parse_interfaces?
-
       parser
     end
 
@@ -413,6 +412,12 @@ module Host
       iface.mac = attributes.delete(:macaddress)
       iface.ip = attributes.delete(:ipaddress)
       iface.ip6 = attributes.delete(:ipaddress6)
+
+      if Setting[:update_subnets_from_facts]
+        iface.subnet = Subnet.subnet_for(iface.ip) if iface.ip_changed? && !iface.matches_subnet?(:ip, :subnet)
+        iface.subnet6 = Subnet.subnet_for(iface.ip6) if iface.ip6_changed? && !iface.matches_subnet?(:ip6, :subnet6)
+      end
+
       iface.virtual = attributes.delete(:virtual) || false
       iface.tag = attributes.delete(:tag) || ''
       iface.attached_to = attributes.delete(:attached_to) if attributes[:attached_to].present?

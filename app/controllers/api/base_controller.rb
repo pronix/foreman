@@ -39,8 +39,8 @@ module Api
 
     rescue_from Foreman::MaintenanceException, :with => :service_unavailable
 
-    def get_resource
-      instance_variable_get(:"@#{resource_name}") || raise('no resource loaded')
+    def get_resource(message = "Couldn't find resource")
+      instance_variable_get(:"@#{resource_name}") || raise(message)
     end
 
     def controller_permission
@@ -61,7 +61,7 @@ module Api
       association = resource_class.reflect_on_all_associations.find {|assoc| assoc.plural_name == parent_name.pluralize}
       #if couldn't find an association by name, try to find one by class
       association ||= resource_class.reflect_on_all_associations.find {|assoc| assoc.class_name == parent_name.camelize}
-      result_scope = resource_class.joins(association.name).merge(scope)
+      result_scope = resource_class_join(association, scope)
       # Check that the scope resolves before return
       result_scope if result_scope.to_a
     rescue ActiveRecord::ConfigurationError
@@ -77,6 +77,10 @@ module Api
       # on the results
       resource_class.joins(association.name).
         where(association.name => scope.map(&:id))
+    end
+
+    def resource_class_join(association, scope)
+      resource_class.joins(association.name).merge(scope)
     end
 
     def resource_scope_for_index(options = {})
@@ -117,7 +121,7 @@ module Api
     end
 
     def process_resource_error(options = { })
-      resource = options[:resource] || get_resource
+      resource = options[:resource] || get_resource(options[:message])
 
       raise 'resource have no errors' if resource.errors.empty?
 
@@ -129,8 +133,8 @@ module Api
       end
     end
 
-    def process_success(response = nil, render_status = nil)
-      render_status ||= request.post? ? :created : :ok
+    def process_success(response = nil)
+      render_status = request.post? ? :created : :ok
       response ||= get_resource
       respond_with response, :responder => ApiResponder, :status => render_status
     end
@@ -269,8 +273,10 @@ module Api
     def set_error_details(error, options)
       case error
       when 'access_denied'
+        fail_message = _('Missing one of the required permissions: %s') % missing_permissions.map(&:name).join(', ')
+        Foreman::Logging.logger('permissions').info fail_message
         if options.fetch(:locals, {}).fetch(:details, nil).blank?
-          options = options.deep_merge({:locals => {:details => _('Missing one of the required permissions: %s') % missing_permissions.map(&:name).join(', ') }})
+          options = options.deep_merge({:locals => {:details => fail_message }})
         end
       end
       options
@@ -371,7 +377,7 @@ module Api
     end
 
     def protect_api_from_forgery?
-      session[:user].present?
+      session[:user].present? && !session[:api_authenticated_session]
     end
 
     def parameter_filter_context

@@ -1,15 +1,13 @@
 require 'test_helper'
+require 'pagelets_test_helper'
 
 class PageletsHelperTest < ActionView::TestCase
   include PageletsHelper
+  include PageletsIsolation
 
   setup do
     controller.prepend_view_path File.expand_path('../../static_fixtures/views', __FILE__)
     self.stubs(:virtual_path).returns("nonexisting/path")
-  end
-
-  teardown do
-    Pagelets::Manager.clear
   end
 
   def action_name

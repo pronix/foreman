@@ -13,14 +13,14 @@ module Nic
     before_validation :set_provisioning_flag
     after_save :update_lookup_value_fqdn_matchers, :drop_host_cache
 
-    validates :ip, :belongs_to_subnet => {:subnet => :subnet }, :if => ->(nic) { nic.dhcp? }
-    validates :ip6, :belongs_to_subnet => {:subnet => :subnet6 }, :if => ->(nic) { nic.dhcp? }
+    validates :ip, :belongs_to_subnet => {:subnet => :subnet }, :if => ->(nic) { nic.managed? }
+    validates :ip6, :belongs_to_subnet => {:subnet => :subnet6 }, :if => ->(nic) { nic.managed? }
 
     # Interface normally are not executed by them self, so we use the host queue and related methods.
     # this ensures our orchestration works on both a host and a managed interface
     delegate :progress_report_id, :capabilities, :compute_resource,
              :operatingsystem, :provisioning_template, :jumpstart?, :build, :build?, :os, :arch,
-             :image_build?, :pxe_build?, :pxe_build?, :token, :to_ip_address, :model, :to => :host
+             :image_build?, :pxe_build?, :pxe_build?, :token, :model, :to => :host
     delegate :operatingsystem_id, :hostgroup_id, :environment_id,
              :overwrite?, :skip_orchestration?, :skip_orchestration!, :to => :host, :allow_nil => true
 

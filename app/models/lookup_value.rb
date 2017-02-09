@@ -1,18 +1,19 @@
 class LookupValue < ActiveRecord::Base
   include Authorizable
   include PuppetLookupValueExtensions
+  include HiddenValue
 
   validates_lengths_from_database
   audited :associated_with => :lookup_key
-  delegate :hidden_value?, :hidden_value, :to => :lookup_key, :allow_nil => true
+  delegate :hidden_value?, :editable_by_user?, :to => :lookup_key, :allow_nil => true
 
   belongs_to :lookup_key
   validates :match, :presence => true, :uniqueness => {:scope => :lookup_key_id}, :format => LookupKey::VALUE_REGEX
   delegate :key, :to => :lookup_key
   before_validation :sanitize_match
 
-  before_validation :validate_and_cast_value, :unless => Proc.new{|p| p.omit }
-  validate :validate_value, :ensure_fqdn_exists, :ensure_hostgroup_exists, :ensure_matcher_exists
+  validate :ensure_fqdn_exists, :ensure_hostgroup_exists, :ensure_matcher_exists
+  validate :validate_value, :unless => Proc.new{|p| p.omit }
 
   attr_accessor :host_or_hostgroup
 
@@ -23,7 +24,7 @@ class LookupValue < ActiveRecord::Base
 
   scoped_search :on => :value, :complete_value => true, :default_order => true
   scoped_search :on => :match, :complete_value => true
-  scoped_search :in => :lookup_key, :on => :key, :rename => :lookup_key, :complete_value => true
+  scoped_search :relation => :lookup_key, :on => :key, :rename => :lookup_key, :complete_value => true
 
   def value=(val)
     if val.is_a?(HashWithIndifferentAccess)
@@ -39,11 +40,12 @@ class LookupValue < ActiveRecord::Base
 
   def value_before_type_cast
     return read_attribute(:value) if errors[:value].present?
-    return self.value if lookup_key.nil? || lookup_key.contains_erb?(self.value)
+    return self.value if lookup_key.nil? || value.contains_erb?
     lookup_key.value_before_type_cast self.value
   end
 
   def validate_value
+    validate_and_cast_value
     Foreman::Parameters::Validator.new(self,
       :type => lookup_key.validator_type,
       :validate_with => lookup_key.validator_rule,
@@ -58,17 +60,11 @@ class LookupValue < ActiveRecord::Base
   end
 
   def validate_and_cast_value
-    return true if self.marked_for_destruction? || !self.value.is_a?(String)
-    begin
-      unless self.lookup_key.contains_erb?(value)
-        Foreman::Parameters::Caster.new(self, :attribute_name => :value, :to => lookup_key.key_type).cast!
-      end
-      true
+    return if !self.value.is_a?(String) || value.contains_erb?
+    Foreman::Parameters::Caster.new(self, :attribute_name => :value, :to => lookup_key.key_type).cast!
     rescue StandardError, SyntaxError => e
       Foreman::Logging.exception("Error while parsing #{lookup_key}", e)
       errors.add(:value, _("is invalid %s") % lookup_key.key_type)
-      false
-    end
   end
 
   def ensure_fqdn_exists

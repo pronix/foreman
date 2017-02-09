@@ -1,14 +1,10 @@
 'use strict';
 
-require( 'es6-promise' ).polyfill(); //needed for compatibility with older node versions
-if (process.arch === 'arm64'){
-  require('es6-map/implement'); // ARMv8 nodejs 4.2.6 implementation is broken somehow
-}
-
 var path = require('path');
 var webpack = require('webpack');
 var StatsPlugin = require('stats-webpack-plugin');
 var ExtractTextPlugin = require("extract-text-webpack-plugin");
+var CompressionPlugin = require('compression-webpack-plugin');
 
 // must match config.webpack.dev_server.port
 var devServerPort = 3808;
@@ -66,10 +62,6 @@ var config = {
       modules: false,
       assets: true
     }),
-    new webpack.ProvidePlugin({
-      $: 'jquery',
-      jQuery: 'jquery',
-    }),
     new ExtractTextPlugin(production ? '[name]-[chunkhash].css' : '[name].css', {
             allChunks: true
     })
@@ -87,7 +79,8 @@ if (production) {
       'process.env': { NODE_ENV: JSON.stringify('production') }
     }),
     new webpack.optimize.DedupePlugin(),
-    new webpack.optimize.OccurenceOrderPlugin()
+    new webpack.optimize.OccurenceOrderPlugin(),
+    new CompressionPlugin()
   );
 } else {
   require('dotenv').config();

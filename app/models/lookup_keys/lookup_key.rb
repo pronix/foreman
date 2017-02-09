@@ -31,7 +31,7 @@ class LookupKey < ActiveRecord::Base
 
   def self.inherited(child)
     child.instance_eval do
-      scoped_search :on => :key, :alias => :parameter, :complete_value => true, :default_order => true
+      scoped_search :on => :key, :aliases => [:parameter], :complete_value => true, :default_order => true
       scoped_search :on => :override, :complete_value => {:true => true, :false => false}
       scoped_search :on => :merge_overrides, :complete_value => {:true => true, :false => false}
       scoped_search :on => :merge_default, :complete_value => {:true => true, :false => false}
@@ -110,7 +110,7 @@ class LookupKey < ActiveRecord::Base
   end
 
   def value_before_type_cast(val)
-    return val if val.nil? || contains_erb?(val)
+    return val if val.nil? || val.contains_erb?
     case key_type.to_sym
       when :json, :array
         val = JSON.dump(val)
@@ -127,10 +127,6 @@ class LookupKey < ActiveRecord::Base
         element
       end
     end
-  end
-
-  def contains_erb?(value)
-    value =~ /<%.*%>/
   end
 
   def overridden?(obj)
@@ -191,7 +187,7 @@ class LookupKey < ActiveRecord::Base
   end
 
   def cast_default_value
-    return true if default_value.nil? || contains_erb?(default_value)
+    return true if default_value.nil? || default_value.contains_erb?
     begin
       Foreman::Parameters::Caster.new(self, :attribute_name => :default_value, :to => key_type).cast!
     rescue

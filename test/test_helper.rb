@@ -8,10 +8,6 @@ require 'factory_girl_rails'
 require 'controllers/shared/basic_rest_response_test'
 require 'facet_test_helper'
 require 'active_support_test_case_helper'
-require 'foreman_tasks/test_helpers'
-
-ForemanTasks.dynflow.require!
-ForemanTasks.dynflow.config.disable_active_record_actions = true
 
 Shoulda::Matchers.configure do |config|
   config.integrate do |with|
@@ -57,6 +53,10 @@ class ActionController::TestCase
   def set_api_user
     return unless self.class.to_s[/api/i]
     set_basic_auth(users(:apiadmin), "secret")
+  end
+
+  def reset_api_credentials
+    @request.env.delete('HTTP_AUTHORIZATION')
   end
 
   def set_basic_auth(user, password)

@@ -1310,6 +1310,28 @@ class HostsControllerTest < ActionController::TestCase
     end
   end
 
+  test '#process_hostgroup works on Host subclasses' do
+    class Host::Test < Host::Base; end
+    user = FactoryGirl.create(:user, :with_mail, :admin => false)
+    FactoryGirl.create(:filter, :role => user.roles.first, :permissions => Permission.where(:name => [ 'edit_hosts', 'view_hosts' ]))
+    hostgroup = FactoryGirl.create(:hostgroup)
+    host = FactoryGirl.create(:host, :type => "Host::Test", :hostgroup => hostgroup)
+    host.stubs(:set_hostgroup_defaults)
+    host.stubs(:set_compute_attributes)
+    host.stubs(:architecture)
+    host.stubs(:operatingsystem)
+    host.stubs(:environment)
+    host.stubs(:domain)
+    host.stubs(:subnet)
+    host.stubs(:compute_profile)
+    host.stubs(:realm)
+    attrs = host_attributes(host)
+    attrs[:id] = host.id
+    attrs[:hostgroup_id] = hostgroup.id
+    xhr :put, :process_hostgroup, { :host => attrs }, set_session_user(user)
+    assert_response :success
+  end
+
   test '#compute_resource_selected returns 404 without compute_resource_id' do
     xhr :get, :compute_resource_selected, { :host => {} }, set_session_user
     assert_response :not_found
@@ -1415,6 +1437,31 @@ class HostsControllerTest < ActionController::TestCase
   test 'do not provide power state for non ajax requests' do
     get :get_power_state, { :id => @host.id }, set_session_user
     assert_response :method_not_allowed
+  end
+
+  describe '#hostgroup_or_environment_selected' do
+    test 'choosing only one of hostgroup or environment renders classes' do
+      xhr :post, :hostgroup_or_environment_selected, {
+        :host_id => nil,
+        :host => {
+          :environment_id => Environment.unscoped.first.id
+        }
+      }, set_session_user
+      assert_response :success
+      assert_template :partial => 'puppetclasses/_class_selection'
+    end
+
+    test 'choosing both hostgroup and environment renders classes' do
+      xhr :post, :hostgroup_or_environment_selected, {
+        :host_id => @host.id,
+        :host => {
+          :environment_id => Environment.unscoped.first.id,
+          :hostgroup_id => Hostgroup.unscoped.first.id
+        }
+      }, set_session_user
+      assert_response :success
+      assert_template :partial => 'puppetclasses/_class_selection'
+    end
   end
 
   private

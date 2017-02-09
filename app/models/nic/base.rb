@@ -70,7 +70,8 @@ module Nic
     class Jail < ::Safemode::Jail
       allow :managed?, :subnet, :subnet6, :virtual?, :physical?, :mac, :ip, :ip6, :identifier, :attached_to,
             :link, :tag, :domain, :vlanid, :bond_options, :attached_devices, :mode,
-            :attached_devices_identifiers, :primary, :provision, :alias?, :inheriting_mac
+            :attached_devices_identifiers, :primary, :provision, :alias?, :inheriting_mac,
+            :children_mac_addresses
     end
 
     def physical?
@@ -135,6 +136,12 @@ module Nic
       end
     end
 
+    # if this interface has attached devices (e.g. in a bond),
+    # we can get the mac addresses from the children
+    def children_mac_addresses
+      []
+    end
+
     # we don't consider host as managed if we are in non-unattended mode
     # in which case host managed? flag can be true but we should consider
     # everything as unmanaged
@@ -176,6 +183,12 @@ module Nic
     # even when address is set during a callback
     def ip6=(addr)
       super(Net::Validations.normalize_ip6(addr))
+    end
+
+    def matches_subnet?(ip_field, subnet_field)
+      return unless send(subnet_field).present?
+      ip_value = send(ip_field)
+      ip_value.present? && public_send(subnet_field).contains?(ip_value)
     end
 
     protected

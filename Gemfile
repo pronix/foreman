@@ -5,10 +5,10 @@ source 'https://rubygems.org'
 
 gem 'rails', '4.2.7.1'
 gem 'rest-client', '>= 1.8.0', '< 3', :require => 'rest_client'
-gem 'audited-activerecord', '>= 4.2.2', '< 5'
+gem 'audited', '~> 4.3'
 gem 'will_paginate', '~> 3.0'
 gem 'ancestry', '~> 2.0'
-gem 'scoped_search', '>= 3.2.2', '< 4'
+gem 'scoped_search', '~> 4.0'
 gem 'ldap_fluff', '>= 0.3.5', '< 1.0'
 gem 'apipie-rails', '~> 0.3.4'
 gem 'rabl', '~> 0.11'
@@ -27,6 +27,7 @@ gem 'fog-core', '1.42.0'
 gem 'net-scp'
 gem 'net-ssh'
 gem 'net-ldap', '>= 0.8.0'
+gem 'net-ping', :require => false
 gem 'activerecord-session_store', '>= 0.1.1', '< 2'
 gem 'sprockets', '~> 3'
 gem 'sprockets-rails', '>= 2.3.3', '< 3'
@@ -36,6 +37,7 @@ gem 'x-editable-rails', '~> 1.5.5'
 gem 'deacon', '~> 1.0'
 gem 'webpack-rails', '~> 0.9.8'
 gem 'mail', '~> 2.6'
+gem 'nokogiri', '< 1.7' if RUBY_VERSION.start_with? '2.0.'
 
 Dir["#{File.dirname(FOREMAN_GEMFILE)}/bundler.d/*.rb"].each do |bundle|
   self.instance_eval(Bundler.read_file(bundle))

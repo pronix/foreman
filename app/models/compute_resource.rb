@@ -18,7 +18,7 @@ class ComputeResource < ActiveRecord::Base
   validates :url, :presence => true
   scoped_search :on => :name, :complete_value => :true
   scoped_search :on => :type, :complete_value => :true
-  scoped_search :on => :id, :complete_enabled => false, :only_explicit => true
+  scoped_search :on => :id, :complete_enabled => false, :only_explicit => true, :validator => ScopedSearch::Validators::INTEGER
   before_save :sanitize_url
   has_many_hosts
   has_many :images, :dependent => :destroy
@@ -71,6 +71,10 @@ class ComputeResource < ActiveRecord::Base
     supported_providers.merge(registered_providers).select do |provider_name, class_name|
       class_name.constantize.available?
     end
+  end
+
+  def self.providers_requiring_url
+    _("Libvirt, oVirt, OpenStack and Rackspace")
   end
 
   def self.provider_class(name)
@@ -127,6 +131,7 @@ class ComputeResource < ActiveRecord::Base
   def host_compute_attrs(host)
     { :name => host.vm_name,
       :provision_method => host.provision_method,
+      :firmware_type => host.firmware_type,
       "#{interfaces_attrs_name}_attributes" => host_interfaces_attrs(host) }.with_indifferent_access
   end
 
@@ -213,9 +218,13 @@ class ComputeResource < ActiveRecord::Base
   end
 
   def update_required?(old_attrs, new_attrs)
-    old_attrs.merge(new_attrs) do |k,old_v,new_v|
-      update_required?(old_v, new_v) if old_v.is_a?(Hash)
-      return true unless old_v == new_v
+    old_attrs.deep_symbolize_keys.merge(new_attrs.deep_symbolize_keys) do |k, old_v, new_v|
+      if old_v.is_a?(Hash) && new_v.is_a?(Hash)
+        return true if update_required?(old_v, new_v)
+      elsif old_v.to_s != new_v.to_s
+        Rails.logger.debug "Scheduling compute instance update because #{k} changed it's value from '#{old_v}' (#{old_v.class}) to '#{new_v}' (#{new_v.class})"
+        return true
+      end
       new_v
     end
     false
@@ -308,10 +317,7 @@ class ComputeResource < ActiveRecord::Base
     vm_attrs = vm.attributes rescue {}
     vm_attrs = vm_attrs.reject{|k,v| k == :id }
 
-    if vm.respond_to?(:volumes)
-      volumes = vm.volumes || []
-      vm_attrs[:volumes_attributes] = Hash[volumes.each_with_index.map { |volume, idx| [idx.to_s, volume.attributes] }]
-    end
+    vm_attrs = set_vm_volumes_attributes(vm, vm_attrs)
     vm_attrs
   rescue ActiveRecord::RecordNotFound
     logger.warn("VM with UUID '#{uuid}' not found on #{self}")
@@ -333,7 +339,7 @@ class ComputeResource < ActiveRecord::Base
   end
 
   def sanitize_url
-    self.url.chomp!("/") unless url.empty?
+    self.url = url.chomp("/") unless url.empty?
   end
 
   def random_password
@@ -365,6 +371,14 @@ class ComputeResource < ActiveRecord::Base
   end
 
   private
+
+  def set_vm_volumes_attributes(vm, vm_attrs)
+    if vm.respond_to?(:volumes)
+      volumes = vm.volumes || []
+      vm_attrs[:volumes_attributes] = Hash[volumes.each_with_index.map { |volume, idx| [idx.to_s, volume.attributes] }]
+    end
+    vm_attrs
+  end
 
   def set_attributes_hash
     self.attrs ||= {}

@@ -3,6 +3,7 @@ class Host::Managed < Host::Base
   include Hostext::Search
   include Hostext::SmartProxy
   include Hostext::Token
+  include Hostext::OperatingSystem
   include SelectiveClone
   include HostParams
   include Facets::ManagedHostExtensions
@@ -72,13 +73,11 @@ class Host::Managed < Host::Base
       :image_build?, :pxe_build?, :otp, :realm, :param_true?, :param_false?, :nil?, :indent, :primary_interface,
       :provision_interface, :interfaces, :bond_interfaces, :bridge_interfaces, :interfaces_with_identifier,
       :managed_interfaces, :facts, :facts_hash, :root_pass, :sp_name, :sp_ip, :sp_mac, :sp_subnet, :use_image,
-      :multiboot, :jumpstart_path, :install_path, :miniroot, :medium, :bmc_nic
+      :multiboot, :jumpstart_path, :install_path, :miniroot, :medium, :bmc_nic, :templates_used
   end
 
   scope :recent,      ->(*args) { where(["last_report > ?", (args.first || (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes.ago)]) }
   scope :out_of_sync, ->(*args) { where(["last_report < ? and hosts.enabled != ?", (args.first || (Setting[:puppet_interval] + Setting[:outofsync_interval]).minutes.ago), false]) }
-
-  scope :with_os, -> { where('hosts.operatingsystem_id IS NOT NULL') }
 
   scope :with_status, lambda { |status_type|
     eager_load(:host_statuses).where("host_status.type = '#{status_type}'")
@@ -154,10 +153,9 @@ class Host::Managed < Host::Base
   has_associated_audits
   #redefine audits relation because of the type change (by default the relation will look for auditable_type = 'Host::Managed')
   has_many :audits, -> { where(:auditable_type => 'Host') }, :foreign_key => :auditable_id,
-    :class_name => Audited.audit_class.name
+    :class_name => 'Audited::Audit'
 
   # some shortcuts
-  alias_attribute :os, :operatingsystem
   alias_attribute :arch, :architecture
 
   validates :environment_id, :presence => true, :unless => Proc.new { |host| host.puppet_proxy_id.blank? }
@@ -184,7 +182,7 @@ class Host::Managed < Host::Base
     include HostTemplateHelpers
     delegate :require_ip4_validation?, :require_ip6_validation?, :to => :provision_interface
 
-    validates :architecture_id, :operatingsystem_id, :presence => true, :if => Proc.new {|host| host.managed}
+    validates :architecture_id, :presence => true, :if => Proc.new {|host| host.managed}
     validates :root_pass, :length => {:minimum => 8, :message => _('should be 8 characters or more')},
                           :presence => {:message => N_('should not be blank - consider setting a global or host group default')},
                           :if => Proc.new { |host| host.managed && host.pxe_build? && build? }
@@ -196,6 +194,7 @@ class Host::Managed < Host::Base
     validate :short_name_periods
     before_validation :set_compute_attributes, :on => :create, :if => Proc.new { compute_attributes_empty? }
     validate :check_if_provision_method_changed, :on => :update, :if => Proc.new { |host| host.managed }
+    validates :uuid, uniqueness: { :allow_blank => true }
   else
     def fqdn
       facts['fqdn'] || name
@@ -331,20 +330,7 @@ class Host::Managed < Host::Base
     unattended_render(template.tr("\r", ''), template_name)
   end
 
-  # returns a configuration template (such as kickstart) to a given host
-  def provisioning_template(opts = {})
-    opts[:kind]               ||= "provision"
-    opts[:operatingsystem_id] ||= operatingsystem_id
-    opts[:hostgroup_id]       ||= hostgroup_id
-    opts[:environment_id]     ||= environment_id
-
-    Taxonomy.as_taxonomy(self.organization, self.location) do
-      ProvisioningTemplate.find_template opts
-    end
-  end
-
   # reports methods
-
   def error_count
     %w[failed failed_restarts].sum {|f| status f}
   end
@@ -383,6 +369,10 @@ class Host::Managed < Host::Base
   # rubocop:disable Metrics/PerceivedComplexity
   # rubocop:disable Metrics/CyclomaticComplexity
   def info
+    renderer_regex = /renderer\.rb.*host_enc/
+    unless caller.first.match(renderer_regex) || caller[1].match(renderer_regex)
+      Foreman::Deprecation.renderer_deprecation('1.17', __method__, 'host_enc')
+    end
     # Static parameters
     param = {}
     # maybe these should be moved to the common parameters, leaving them in for now
@@ -417,25 +407,16 @@ class Host::Managed < Host::Base
     end
     param['foreman_subnets'] = (interfaces.map(&:subnet) + interfaces.map(&:subnet6)).compact.map(&:to_export).uniq
     param['foreman_interfaces'] = interfaces.map(&:to_export)
+    param['foreman_config_groups'] = (config_groups + parent_config_groups).uniq.map(&:name)
     param.update self.params
 
     # Parse ERB values contained in the parameters
     param = SafeRender.new(:variables => { :host => self }).parse(param)
 
-    classes = if self.environment.nil?
-                []
-              elsif Setting[:Parametrized_Classes_in_ENC] && Setting[:Enable_Smart_Variables_in_ENC]
-                lookup_keys_class_params
-              else
-                self.puppetclasses_names
-              end
-
     info_hash = {}
-    info_hash['classes'] = classes
+    info_hash['classes'] = self.enc_puppetclasses
     info_hash['parameters'] = param
     info_hash['environment'] = param["foreman_env"] if Setting["enc_environment"] && param["foreman_env"]
-
-    info_hash['foreman_config_groups'] = (config_groups + parent_config_groups).uniq.map(&:name)
 
     info_hash
   end
@@ -463,7 +444,15 @@ class Host::Managed < Host::Base
   end
 
   def attributes_to_import_from_facts
-    super + [:domain, :architecture, :operatingsystem]
+    attrs = [:architecture, :hostgroup]
+    if !Setting[:ignore_facts_for_operatingsystem] || (Setting[:ignore_facts_for_operatingsystem] && operatingsystem.blank?)
+      attrs << :operatingsystem
+    end
+    if !Setting[:ignore_facts_for_domain] || (Setting[:ignore_facts_for_domain] && domain.blank?)
+      attrs << :domain
+    end
+
+    super + attrs
   end
 
   def populate_fields_from_facts(facts = self.facts_hash, type = 'puppet')
@@ -566,6 +555,10 @@ class Host::Managed < Host::Base
     Foreman::Plugin.all.map(&:provision_methods).inject(:merge) || {}
   end
 
+  def self.valid_rebuild_only_values
+    Nic::Managed.rebuild_methods.values + Host::Managed.rebuild_methods.values
+  end
+
   def classes_from_storeconfigs
     klasses = resources.select(:title).where(:restype => "Class").where("title <> ? AND title <> ?", "main", "Settings").order(:title)
     klasses.map!(&:title).delete(:main)
@@ -574,10 +567,6 @@ class Host::Managed < Host::Base
 
   def can_be_built?
     managed? && SETTINGS[:unattended] && pxe_build? && !build?
-  end
-
-  def jumpstart?
-    operatingsystem.family == "Solaris" && architecture.name =~/Sparc/i rescue false
   end
 
   def hostgroup_inherited_attributes
@@ -606,6 +595,7 @@ class Host::Managed < Host::Base
       attributes[attribute] = value
     end
 
+    attributes = apply_facet_attributes(new_hostgroup, attributes)
     attributes
   end
 
@@ -791,30 +781,6 @@ class Host::Managed < Host::Base
     managed && pxe_build? && build?
   end
 
-  def available_template_kinds(provisioning = nil)
-    kinds = if provisioning == 'image'
-              cr     = ComputeResource.find_by_id(self.compute_resource_id)
-              images = cr.try(:images)
-              if images.blank?
-                [TemplateKind.friendly.find('finish')]
-              else
-                uuid       = self.compute_attributes[cr.image_param_name]
-                image_kind = images.find_by_uuid(uuid).try(:user_data) ? 'user_data' : 'finish'
-                [TemplateKind.friendly.find(image_kind)]
-              end
-            else
-              TemplateKind.all
-            end
-
-    kinds.map do |kind|
-      ProvisioningTemplate.find_template({ :kind               => kind.name,
-                                           :operatingsystem_id => operatingsystem_id,
-                                           :hostgroup_id       => hostgroup_id,
-                                           :environment_id     => environment_id
-                                         })
-    end.compact
-  end
-
   def render_template(template)
     @host = self
     load_template_vars
@@ -879,41 +845,48 @@ class Host::Managed < Host::Base
   end
   # rebuilds orchestration configuration for a host
   # takes all the methods from Orchestration modules that are registered for configuration rebuild
+  # arguments:
+  # => only : Array of rebuild methods to execute (Example: ['TFTP'])
   # returns  : Hash with 'true' if rebuild was a success for a given key (Example: {"TFTP" => true, "DNS" => false})
-  def recreate_config
+  def recreate_config(only = nil)
     result = {}
-    Nic::Managed.rebuild_methods.map do |method, pretty_name|
+
+    Nic::Managed.rebuild_methods_for(only).map do |method, pretty_name|
       interfaces.map do |interface|
         value = interface.send method
         result[pretty_name] = value if !result.has_key?(pretty_name) || (result[pretty_name] && !value)
       end
     end
 
-    self.class.rebuild_methods.map do |method, pretty_name|
+    self.class.rebuild_methods_for(only).map do |method, pretty_name|
       raise ::Foreman::Exception.new(N_("There are orchestration modules with methods for configuration rebuild that have identical name: '%s'") % pretty_name) if result[pretty_name]
       result[pretty_name] = self.send method
     end
     result
   end
 
-  # converts a name into ip address using DNS.
-  # if we are managing DNS, we can query the correct DNS server
-  # otherwise, use normal systems dns settings to resolv
   def to_ip_address(name_or_ip)
-    return name_or_ip if name_or_ip =~ Net::Validations::IP_REGEXP
-    if dns_record(:ptr4)
-      lookup = dns_record(:ptr4).dns_lookup(name_or_ip)
-      return lookup.ip unless lookup.nil?
-    end
-    # fall back to normal dns resolution
-    domain.resolver.getaddress(name_or_ip).to_s
-  rescue => e
-    logger.warn "Unable to find IP address for '#{name_or_ip}': #{e}"
-    raise ::Foreman::WrappedException.new(e, N_("Unable to find IP address for '%s'"), name_or_ip)
+    Foreman::Deprecation.deprecation_warning('1.17', 'Host::Managed#to_ip_address has been deprecated, you should use NicIpResolver class instead')
+    NicIpResolver.new(:nic => provision_interface).to_ip_address(name_or_ip)
   end
 
   def apply_compute_profile(modification)
     modification.run(self, compute_resource.try(:compute_profile_for, compute_profile_id))
+  end
+
+  def firmware_type
+    return unless pxe_loader.present?
+    Operatingsystem.firmware_type(pxe_loader)
+  end
+
+  def enc_puppetclasses
+    if self.environment.nil?
+      []
+    elsif Setting[:Parametrized_Classes_in_ENC] && Setting[:Enable_Smart_Variables_in_ENC]
+      lookup_keys_class_params
+    else
+      self.puppetclasses_names
+    end
   end
 
   private

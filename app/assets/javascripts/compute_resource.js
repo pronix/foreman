@@ -1,10 +1,10 @@
 // AJAX load vm listing
 $(function() {
-  $('#vms, #images_list').each(function() {
+  $('#vms, #images_list, #key_pairs_list').each(function() {
     var url = $(this).attr('data-url');
     $(this).load(url + ' table', function(response, status, xhr) {
       if (status == "error") {
-        $(this).closest(".tab-content").find("#spinner").html(Jed.sprintf(__("There was an error listing VMs: %(status)s %(statusText)s"), {status: xhr.status, statusText: xhr.statusText}));
+        $(this).html(Jed.sprintf(__("There was an error listing VMs: %(status)s %(statusText)s"), {status: xhr.status, statusText: xhr.statusText}));
       }
       else {
         tfm.tools.activateDatatables();
@@ -66,7 +66,7 @@ function testConnection(item) {
 
 function ovirt_templateSelected(item){
   var template = $(item).val();
-  if (template) {
+  if (template && !item.disabled) {
     var url = $(item).attr('data-url');
     tfm.tools.showSpinner();
     $.ajax({
@@ -80,6 +80,10 @@ function ovirt_templateSelected(item){
         $.each(result.interfaces, function() {add_network_interface(this);});
         $('#storage_volumes').children('.fields').remove();
         $.each(result.volumes, function() {add_volume(this);});
+        templateSelector = $("select#host_compute_attributes_template")
+        if (templateSelector[0].disabled) {
+          templateSelector.val(result.id).trigger("change");
+        }
       },
       complete: function(){
         reloadOnAjaxComplete(item);

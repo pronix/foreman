@@ -46,6 +46,7 @@ module Api
 
       api :GET, "/hosts/:id/", N_("Show a host")
       param :id, :identifier_dottable, :required => true
+      param :show_hidden_parameters, :bool, :desc => N_("Display hidden parameter values")
 
       def show
         @parameters = true
@@ -67,6 +68,7 @@ module Api
             param :"#{name}_id", :number, :desc => options[:api_description]
           end
           param :puppetclass_ids, Array
+          param :config_group_ids, Array, :desc => N_("IDs of associated config groups")
           param :operatingsystem_id, String, :desc => N_("required if host is managed and value is not inherited from host group")
           param :medium_id, String, :desc => N_("required if not imaged based provisioning and host is managed and value is not inherited from host group")
           param :pxe_loader, Operatingsystem.all_loaders, :desc => N_("DHCP filename option (Grub2/PXELinux by default)")
@@ -99,6 +101,7 @@ module Api
           Facets.registered_facets.values.each do |facet_config|
             next unless facet_config.api_param_group && facet_config.api_controller
             param "#{facet_config.name}_attributes".to_sym, Hash, :desc => facet_config.api_param_group_description || (N_("Parameters for host's %s facet") % facet_config.name) do
+              facet_config.load_api_controller
               param_group facet_config.api_param_group, facet_config.api_controller
             end
           end
@@ -112,6 +115,7 @@ module Api
         @host = Host.new(host_attributes(host_params))
         @host.managed = true if (params[:host] && params[:host][:managed].nil?)
         apply_compute_profile(@host)
+        @host.suggest_default_pxe_loader if params[:host] && params[:host][:pxe_loader].nil?
 
         forward_request_url
         process_response @host.save
@@ -265,8 +269,9 @@ Return the host's compute attributes that can be used to create a clone of this 
 
       api :PUT, "/hosts/:id/rebuild_config", N_("Rebuild orchestration config")
       param :id, :identifier_dottable, :required => true
+      param :only, Array, :desc => N_("Limit rebuild steps, valid steps are %{host_rebuild_steps}")
       def rebuild_config
-        result = @host.recreate_config
+        result = @host.recreate_config(params[:only])
         failures = result.reject { |key, value| value }.keys.map{ |k| _(k) }
         if failures.empty?
           render_message _("Configuration successfully rebuilt."), :status => :ok
@@ -300,7 +305,7 @@ Return the host's compute attributes that can be used to create a clone of this 
         params = params.deep_clone
         if params[:interfaces_attributes]
           # handle both hash and array styles of nested attributes
-          if params[:interfaces_attributes].is_a? Hash
+          if params[:interfaces_attributes].is_a?(Hash) || params[:interfaces_attributes].is_a?(ActionController::Parameters)
             params[:interfaces_attributes] = params[:interfaces_attributes].values
           end
           # map interface types
@@ -366,6 +371,11 @@ Return the host's compute attributes that can be used to create a clone of this 
 
       def allowed_nested_id
         %w(hostgroup_id location_id organization_id environment_id)
+      end
+
+      def resource_class_join(association, scope)
+        resource_class_join = resource_class.joins(association.name)
+        resource_class_join.merge(scope).present? ? resource_class_join.merge(scope) : resource_class_join
       end
     end
   end

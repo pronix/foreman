@@ -19,9 +19,9 @@ describe('activateDatatables', () => {
 
     // Used for rendering lists of VMs under compute resources
     document.body.innerHTML =
-      '<div data-table=server data-source=http://example.foo>' +
-      'To be filled by a table' +
-        '</div>';
+      `<div data-table=server data-source=http://example.foo>
+      To be filled by a table
+      </div>`;
     $.fn.DataTable = jest.fn();
     tools.activateDatatables();
     expect($.fn.DataTable).toBeCalledWith({
@@ -31,5 +31,29 @@ describe('activateDatatables', () => {
       ajax: $('[data-table=server]').data('source'),
       dom: "<'row'<'col-md-6'f>r>t<'row'<'col-md-6'><'col-md-6'p>>"
     });
+  });
+});
+
+describe('activateTooltips', () => {
+  it('calls $.fn.tooltip on all matching elements', () => {
+    const $ = require('jquery');
+    const elements =
+      `<div rel='twipsy'></div>
+      <div class='ellipsis'></div>
+      <div title='test'></div>
+      <div title='test' rel='popover'></div>`;
+
+    $.fn.tooltip = jest.fn();
+    tools.activateTooltips(elements);
+    expect($.fn.tooltip).toHaveBeenCalledTimes(3);
+  });
+});
+
+/* eslint-disable no-console, max-len */
+describe('deprecate', () => {
+  it('Logs the correct deprecation message', () => {
+    console.warn = jest.fn();
+    tools.deprecate('oldtest', 'tfm.tools.newtest', '1.42');
+    expect(console.warn).toHaveBeenCalledWith('DEPRECATION WARNING: you are using deprecated oldtest, it will be removed in Foreman 1.42. Use tfm.tools.newtest instead.');
   });
 });

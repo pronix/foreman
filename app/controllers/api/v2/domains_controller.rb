@@ -33,6 +33,7 @@ module Api
 
       api :GET, "/domains/:id/", N_("Show a domain")
       param :id, :identifier, :required => true, :desc => N_("Numerical ID or domain name")
+      param :show_hidden_parameters, :bool, :desc => N_("Display hidden parameter values")
 
       def show
       end
@@ -60,6 +61,9 @@ module Api
       def create
         @domain = Domain.new(domain_params)
         process_response @domain.save
+      rescue ActiveRecord::InvalidForeignKey
+        @domain.errors.add(:dns_id, _('Invalid smart-proxy id'))
+        process_resource_error
       end
 
       api :PUT, "/domains/:id/", N_("Update a domain")

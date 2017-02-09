@@ -2,19 +2,15 @@ require 'tempfile'
 
 module Foreman
   module Renderer
-    # foreman_url macro uses url_for, therefore we need url helpers and fake default_url_options
-    # if it's not defined in class the we mix into
-    include Rails.application.routes.url_helpers
-
-    def default_url_options
-      {}
-    end
+    include ::Foreman::ForemanUrlRenderer
 
     ALLOWED_GENERIC_HELPERS ||= [ :foreman_url, :snippet, :snippets, :snippet_if_exists, :indent, :foreman_server_fqdn,
                                   :foreman_server_url, :log_debug, :log_info, :log_warn, :log_error, :log_fatal, :template_name, :dns_lookup,
-                                  :pxe_kernel_options ]
+                                  :pxe_kernel_options, :save_to_file ]
     ALLOWED_HOST_HELPERS ||= [ :grub_pass, :ks_console, :root_pass,
-                               :media_path, :param_true?, :param_false?, :match ]
+                               :media_path, :param_true?, :param_false?, :match,
+                               :host_param_true?, :host_param_false?,
+                               :host_param, :host_puppet_classes, :host_enc ]
 
     ALLOWED_HELPERS ||= ALLOWED_GENERIC_HELPERS + ALLOWED_HOST_HELPERS
 
@@ -26,6 +22,30 @@ module Foreman
       @template_logger ||= Foreman::Logging.logger('templates')
     end
 
+    def host_enc(*path)
+      @enc ||= @host.info.deep_dup
+      return @enc if path.compact.empty?
+      enc = @enc
+      path.each { |step| enc = enc.fetch step }
+      enc
+    end
+
+    def host_param(param_name)
+      @host.params[param_name]
+    end
+
+    def host_puppet_classes
+      @host.puppetclasses
+    end
+
+    def host_param_true?(name)
+      @host.params.has_key?(name) && Foreman::Cast.to_bool(@host.params[name])
+    end
+
+    def host_param_false?(name)
+      @host.params.has_key?(name) && Foreman::Cast.to_bool(@host.params[name]) == false
+    end
+
     def render_safe(template, allowed_methods = [], allowed_vars = {})
       if Setting[:safemode_render]
         box = Safemode::Box.new self, allowed_methods
@@ -34,43 +54,6 @@ module Foreman
         allowed_vars.each { |k,v| instance_variable_set "@#{k}", v }
         ERB.new(template, nil, '-').result(binding)
       end
-    end
-
-    #returns the URL for Foreman Built status (when a host has finished the OS installation)
-    def foreman_url(action = "built")
-      # Get basic stuff
-      config   = URI.parse(Setting[:unattended_url])
-      protocol = config.scheme || 'http'
-      host     = config.host || request.host
-      port     = config.port || request.port
-      path     = config.path
-
-      proxy = @host.try(:subnet).try(:tftp)
-
-      # use template_url from the request if set, but otherwise look for a Template
-      # feature proxy, as PXE templates are written without an incoming request.
-      url = if @template_url
-              @template_url
-            elsif proxy.present? && proxy.has_feature?('Templates')
-              temp_url = ProxyAPI::Template.new(:url => proxy.url).template_url
-              if temp_url.nil?
-                template_logger.warn("unable to obtain template url set by proxy #{proxy.url}. falling back on proxy url.")
-                temp_url = proxy.url
-              end
-              temp_url
-            end
-
-      if url.present?
-        uri      = URI.parse(url)
-        host     = uri.host
-        port     = uri.port
-        protocol = uri.scheme
-        path     = config.path
-      end
-
-      url_for :only_path => false, :controller => "/unattended", :action => 'host_template',
-              :protocol  => protocol, :host => host, :port => port, :script_name => path,
-              :token     => (@host.token.value unless @host.try(:token).nil?), :kind => action
     end
 
     def foreman_server_fqdn
@@ -103,18 +86,18 @@ module Foreman
     end
 
     # provide embedded snippets support as simple erb templates
-    def snippets(file)
+    def snippets(file, options = {})
       if Template.where(:name => file, :snippet => true).empty?
         render :partial => "unattended/snippets/#{file}"
       else
-        return snippet(file.gsub(/^_/, ""))
+        return snippet(file.gsub(/^_/, ""), options)
       end
     end
 
     def snippet(name, options = {})
       if (template = Template.where(:name => name, :snippet => true).first)
         begin
-          return unattended_render(template)
+          return unattended_render(template, nil, options[:variables] || {})
         rescue => exc
           raise "The snippet '#{name}' threw an error: #{exc}"
         end
@@ -127,8 +110,12 @@ module Foreman
       end
     end
 
-    def snippet_if_exists(name)
-      snippet name, :silent => true
+    def snippet_if_exists(name, options = {})
+      snippet name, options.merge(:silent => true)
+    end
+
+    def save_to_file(filename, content)
+      "cat << EOF > #{filename}\n#{content}EOF"
     end
 
     def indent(count)
@@ -152,13 +139,13 @@ module Foreman
     end
 
     # accepts either template object or plain string
-    def unattended_render(template, overridden_name = nil)
+    def unattended_render(template, overridden_name = nil, variables = {})
       @template_name = template.respond_to?(:name) ? template.name : (overridden_name || 'Unnamed')
       template_logger.info "Rendering template '#{@template_name}'"
       raise ::Foreman::Exception.new(N_("Template '%s' is either missing or has an invalid organization or location"), @template_name) if template.nil?
       content = template.respond_to?(:template) ? template.template : template
       allowed_variables = allowed_variables_mapping(ALLOWED_VARIABLES)
-      render_safe content, ALLOWED_HELPERS, allowed_variables
+      render_safe content, ALLOWED_HELPERS, allowed_variables.merge(variables)
     end
 
     def unattended_render_to_temp_file(content, prefix = id.to_s, options = {})
@@ -238,6 +225,7 @@ module Foreman
     end
 
     def yast_attributes
+      @dynamic   = @host.diskLayout =~ /^#Dynamic/ if (@host.respond_to?(:disk) && @host.disk.present?) || @host.ptable.present?
       @mediapath = @host.operatingsystem.mediumpath @host
     end
 

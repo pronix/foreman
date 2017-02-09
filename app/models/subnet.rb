@@ -85,8 +85,8 @@ class Subnet < ActiveRecord::Base
   scoped_search :on => [:name, :network, :mask, :gateway, :dns_primary, :dns_secondary,
                         :vlanid, :ipam, :boot_mode, :type], :complete_value => true
 
-  scoped_search :in => :domains, :on => :name, :rename => :domain, :complete_value => true
-  scoped_search :in => :subnet_parameters, :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
+  scoped_search :relation => :domains, :on => :name, :rename => :domain, :complete_value => true
+  scoped_search :relation => :subnet_parameters, :on => :value, :on_key=> :name, :complete_value => true, :only_explicit => true, :rename => :params
 
   delegate :supports_ipam_mode?, :supported_ipam_modes, :show_mask?, to: 'self.class'
 
@@ -199,9 +199,9 @@ class Subnet < ActiveRecord::Base
   end
 
   def known_ips
+    self.interfaces.reload
     ips = self.interfaces.map(&ip_sym) + self.hosts.includes(:interfaces).map(&ip_sym)
     ips += [self.gateway, self.dns_primary, self.dns_secondary].select(&:present?)
-    self.clear_association_cache
     ips.compact.uniq
   end
 
@@ -273,6 +273,7 @@ class Subnet < ActiveRecord::Base
     # [+ip+] : IPv4 or IPv6 address
     # Returns : Subnet object or nil if not found
     def subnet_for(ip)
+      return unless ip.present?
       ip = IPAddr.new(ip)
       Subnet.all.detect {|s| s.family == ip.family && s.contains?(ip)}
     end

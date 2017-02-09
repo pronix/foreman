@@ -240,7 +240,7 @@ class UsersControllerTest < ActionController::TestCase
   test "should create and login external user" do
     Setting['authorize_login_delegation'] = true
     Setting['authorize_login_delegation_auth_source_user_autocreate'] = 'apache_mod'
-    @request.session = nil
+    @request.session.clear
     @request.env['REMOTE_USER'] = 'ares'
     get :extlogin, {}, {}
     assert_redirected_to edit_user_path(User.find_by_login('ares'))
@@ -378,6 +378,14 @@ class UsersControllerTest < ActionController::TestCase
     MailNotification.any_instance.stubs(:deliver).raises(Net::SMTPFatalError, 'Exception message')
     put :test_mail, { :id => user.id, :user => {:login => "johnsmith"}, :user_email => "foo@bar.com" }, set_session_user
     assert_response :unprocessable_entity
+  end
+
+  test "test email should be delivered to user's email when no email param exists" do
+    user = users(:one)
+    put :test_mail, { :id => user.id, :user => {:login => user.login} }, set_session_user
+    mail = ActionMailer::Base.deliveries.last
+    assert mail.subject.include? "Foreman test email"
+    assert_equal user.mail, mail.to[0]
   end
 
   context "when user is logged in" do

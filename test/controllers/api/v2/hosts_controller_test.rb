@@ -45,6 +45,13 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     )
   end
 
+  def basic_attrs_with_hg
+    hostgroup_attr = {
+      :hostgroup_id => Hostgroup.first.id
+    }
+    basic_attrs.merge(hostgroup_attr)
+  end
+
   def nics_attrs
     [{
       :primary => true,
@@ -259,6 +266,12 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     assert_response :success
   end
 
+  test "should update hostgroup_id of host" do
+    @host = FactoryGirl.create(:host, basic_attrs_with_hg)
+    put :update, { :id => @host.to_param, :hostgroup_id => Hostgroup.last.id }
+    assert_response :success
+  end
+
   test "should update interfaces from compute profile" do
     disable_orchestration
 
@@ -435,6 +448,13 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     assert_response 422
   end
 
+  def test_rebuild_tftp_config
+    Host.any_instance.expects(:recreate_config).returns({ "TFTP" => true })
+    host = FactoryGirl.create(:host)
+    post :rebuild_config, { :id => host.to_param, :only => ['TFTP'] }, set_session_user
+    assert_response :success
+  end
+
   def test_create_valid_node_from_json_facts_object_without_certname
     User.current=nil
     hostname = fact_json['name']
@@ -458,6 +478,28 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     facts    = fact_json['facts'].except('operatingsystem')
     post :facts, {:name => hostname, :facts => facts}, set_session_user
     assert_response :unprocessable_entity
+  end
+
+  test 'set hostgroup when foreman_hostgroup present in facts' do
+    Setting[:create_new_host_when_facts_are_uploaded] = true
+    hostgroup = FactoryGirl.create(:hostgroup)
+    hostname = fact_json['name']
+    facts    = fact_json['facts']
+    facts['foreman_hostgroup'] = hostgroup.title
+    post :facts, {:name => hostname, :facts => facts}
+    assert_response :success
+    assert_equal hostgroup, Host.find_by(:name => hostname).hostgroup
+  end
+
+  test 'assign hostgroup attributes when foreman_hostgroup present in facts' do
+    Setting[:create_new_host_when_facts_are_uploaded] = true
+    hostgroup = FactoryGirl.create(:hostgroup, :with_rootpass)
+    hostname = fact_json['name']
+    facts    = fact_json['facts']
+    facts['foreman_hostgroup'] = hostgroup.title
+    post :facts, {:name => hostname, :facts => facts}
+    assert_response :success
+    assert_equal hostgroup.root_pass, Host.find_by(:name => hostname).root_pass
   end
 
   test 'when ":restrict_registered_smart_proxies" is false, HTTP requests should be able to import facts' do
@@ -731,6 +773,24 @@ class Api::V2::HostsControllerTest < ActionController::TestCase
     response = ActiveSupport::JSON.decode(@response.body)
     puppet_class = response['data']['classes'].first rescue nil
     assert_equal host.puppetclasses.first.name, puppet_class
+  end
+
+  context 'hidden parameters' do
+    test "should show a host parameter as hidden unless show_hidden_parameters is true" do
+      host = FactoryGirl.create(:host)
+      host.host_parameters.create!(:name => "foo", :value => "bar", :hidden_value => true)
+      get :show, { :id => host.id }
+      show_response = ActiveSupport::JSON.decode(@response.body)
+      assert_equal '*****', show_response['parameters'].first['value']
+    end
+
+    test "should show a host parameter as unhidden when show_hidden_parameters is true" do
+      host = FactoryGirl.create(:host)
+      host.host_parameters.create!(:name => "foo", :value => "bar", :hidden_value => true)
+      get :show, { :id => host.id, :show_hidden_parameters => 'true' }
+      show_response = ActiveSupport::JSON.decode(@response.body)
+      assert_equal 'bar', show_response['parameters'].first['value']
+    end
   end
 
   private

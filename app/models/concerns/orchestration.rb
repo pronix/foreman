@@ -22,6 +22,14 @@ module Orchestration
       @rebuild_methods = methods || {}
     end
 
+    def rebuild_methods_for(only = nil)
+      if only.present?
+        (@rebuild_methods || {}).select { |k,v| only.include?(v) }
+      else
+        @rebuild_methods || {}
+      end
+    end
+
     def register_rebuild(method, pretty_name)
       @rebuild_methods ||= {}
       fail "Method :#{method} is already registered, choose different name for your method" if @rebuild_methods[method]
@@ -151,6 +159,18 @@ module Orchestration
     fail_queue(q)
 
     rollback
+  ensure
+    unless q.nil?
+      logger.info("Processed queue '#{queue_name}', #{q.completed.count}/#{q.all.count} completed tasks") unless q.empty?
+      q.all.each do |task|
+        msg = "Task #{task.name} *#{task.status}*"
+        if task.status?(:completed) || task.status?(:pending)
+          logger.debug msg
+        else
+          logger.error msg
+        end
+      end
+    end
   end
 
   def fail_queue(q)

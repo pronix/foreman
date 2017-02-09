@@ -8,7 +8,7 @@ class PuppetclassLookupKey < LookupKey
   validate :validate_default_value, :disable_merge_overrides, :disable_avoid_duplicates, :disable_merge_default, :if => :override?
   after_validation :reset_override_params, :if => ->(key) { key.override_changed? && !key.override? }
 
-  scoped_search :in => :param_classes, :on => :name, :rename => :puppetclass, :alias => :puppetclass_name, :complete_value => true
+  scoped_search :relation => :param_classes, :on => :name, :rename => :puppetclass, :aliases => [:puppetclass_name], :complete_value => true
 
   scope :smart_class_parameters_for_class, lambda { |puppetclass_ids, environment_id|
                                              joins(:environment_classes).where(:environment_classes => {:puppetclass_id => puppetclass_ids, :environment_id => environment_id})
@@ -19,6 +19,10 @@ class PuppetclassLookupKey < LookupKey
                                }
 
   scope :smart_class_parameters, -> { joins(:environment_classes).readonly(false) }
+
+  def editable_by_user?
+   PuppetclassLookupKey.authorized(:edit_external_parameters).where(:id => id).exists?
+  end
 
   def param_class
     param_classes.first

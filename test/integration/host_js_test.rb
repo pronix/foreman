@@ -102,7 +102,7 @@ class HostJSTest < IntegrationTestWithJavascript
 
   describe "create new host page" do
     test "default primary interface is in the overview table" do
-      assert_new_button(hosts_path, "New Host", new_host_path)
+      assert_new_button(hosts_path, "Create Host", new_host_path)
 
       # switch to interfaces tab
       page.find(:link, "Interfaces").click
@@ -535,6 +535,31 @@ class HostJSTest < IntegrationTestWithJavascript
         assert_interface_change(-1) do
           table.all(:button, "Delete").last.click
         end
+      end
+    end
+  end
+
+  describe 'Puppet Classes tab' do
+    context 'has inherited Puppetclasses' do
+      setup do
+        @hostgroup = FactoryGirl.create(:hostgroup, :with_puppetclass)
+        @host = FactoryGirl.create(:host, hostgroup: @hostgroup, environment: @hostgroup.environment)
+
+        visit edit_host_path(@host)
+        page.find(:link, 'Puppet Classes', href: '#puppet_klasses').click
+      end
+
+      test 'it mentions the hostgroup by name in the tooltip' do
+        page.find('#puppet_klasses .panel h3 a').click
+        class_element = page.find('#inherited_ids>li')
+
+        assert_equal @hostgroup.puppetclasses.first.name, class_element.text
+      end
+
+      test 'it shows a header mentioning the hostgroup inherited from' do
+        header_element = page.find('#puppet_klasses .panel h3 a')
+
+        assert header_element.text =~ /#{@hostgroup.name}$/
       end
     end
   end

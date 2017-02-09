@@ -32,7 +32,7 @@ class Taxonomy < ActiveRecord::Base
   def self.inherited(child)
     child.instance_eval do
       scoped_search :on => :description, :complete_enabled => :false, :only_explicit => true
-      scoped_search :on => :id
+      scoped_search :on => :id, :validator => ScopedSearch::Validators::INTEGER
     end
     child.send(:include, NestedAncestryCommon::Search)
     super
@@ -89,7 +89,13 @@ class Taxonomy < ActiveRecord::Base
   end
 
   def self.ignore?(taxable_type)
-    Array.wrap(self.current).each do |current|
+    current_taxonomies = if self.current.nil? && User.current.present?
+                           # "Any context" - all available taxonomies"
+                           User.current.public_send(self.to_s.underscore.pluralize)
+                         else
+                           self.current
+                         end
+    Array.wrap(current_taxonomies).each do |current|
       return true if current.ignore?(taxable_type)
     end
     false

@@ -62,6 +62,14 @@ module HostCommon
     end
   end
 
+  def parent_name
+    if is_a?(Host::Base) && hostgroup
+      hostgroup.name
+    elsif is_a?(Hostgroup) && parent
+      parent.name
+    end
+  end
+
   # Returns a url pointing to boot file
   def url_for_boot(file)
     "#{os.medium_uri(self)}/#{os.url_for_boot(file)}"
@@ -146,10 +154,12 @@ module HostCommon
   end
 
   def param_true?(name)
+    Foreman::Deprecation.renderer_deprecation('1.17', __method__, 'host_param_true?')
     params.has_key?(name) && Foreman::Cast.to_bool(params[name])
   end
 
   def param_false?(name)
+    Foreman::Deprecation.renderer_deprecation('1.17', __method__, 'host_param_false?')
     params.has_key?(name) && Foreman::Cast.to_bool(params[name]) == false
   end
 
@@ -201,16 +211,14 @@ module HostCommon
     end
   end
 
+  # Returns Puppetclasses of a Host or Hostgroup
+  #
+  # It does not include Puppetclasses of it's ConfigGroupClasses
+  #
   def individual_puppetclasses
     ids = host_class_ids - cg_class_ids
     return puppetclasses if ids.blank? && new_record?
-
-    conditions = {:id => ids}
-    if environment
-      environment.puppetclasses.where(conditions)
-    else
-      Puppetclass.where(conditions)
-    end
+    Puppetclass.includes(:environments).where(id: ids)
   end
 
   def available_puppetclasses

@@ -4,6 +4,7 @@ require 'foreman/exception'
 module Foreman::Model
   class Vmware < ComputeResource
     include ComputeResourceConsoleCommon
+    include ComputeResourceCaching
 
     validates :user, :password, :server, :datacenter, :presence => true
     before_create :update_public_key
@@ -17,6 +18,10 @@ module Foreman::Model
     end
 
     def user_data_supported?
+      true
+    end
+
+    def supports_update?
       true
     end
 
@@ -49,41 +54,54 @@ module Foreman::Model
     end
 
     def datacenters
-      name_sort(client.datacenters.all)
+      cache.cache(:datacenters) do
+        name_sort(client.datacenters.all)
+      end
     end
 
     def cluster(cluster)
-      dc.clusters.get(cluster)
+      cache.cache(:"cluster-#{cluster}") do
+        dc.clusters.get(cluster)
+      end
     end
 
     def clusters
-      if dc.clusters.nil?
+      dc_clusters = dc.clusters
+      if dc_clusters.nil?
         Rails.logger.info "Datacenter #{dc.try(:name)} returned zero clusters"
         return []
       end
-      dc.clusters.map(&:full_path).sort
+      dc_clusters.map(&:full_path).sort
     end
 
     def datastores(opts = {})
       if opts[:storage_domain]
-        name_sort(dc.datastores.get(opts[:storage_domain]))
+        cache.cache(:"datastores-#{opts[:storage_domain]}") do
+          name_sort(dc.datastores.get(opts[:storage_domain]))
+        end
       else
-        name_sort(dc.datastores.all(:accessible => true))
+        cache.cache(:datastores) do
+          name_sort(dc.datastores.all(:accessible => true))
+        end
       end
     end
 
     def storage_pods(opts = {})
       if opts[:storage_pod]
-        begin
-          dc.storage_pods.get(opts[:storage_pod])
-        rescue RbVmomi::VIM::InvalidArgument
-          {} # Return an empty storage pod hash if vsphere does not support the feature
+        cache.cache(:"storage_pods-#{opts[:storage_pod]}") do
+          begin
+            dc.storage_pods.get(opts[:storage_pod])
+          rescue RbVmomi::VIM::InvalidArgument
+            {} # Return an empty storage pod hash if vsphere does not support the feature
+          end
         end
       else
-        begin
-          name_sort(dc.storage_pods.all())
-        rescue RbVmomi::VIM::InvalidArgument
-          [] # Return an empty set of storage pods if vsphere does not support the feature
+        cache.cache(:storage_pods) do
+          begin
+            name_sort(dc.storage_pods.all())
+          rescue RbVmomi::VIM::InvalidArgument
+            [] # Return an empty set of storage pods if vsphere does not support the feature
+          end
         end
       end
     end
@@ -93,20 +111,28 @@ module Foreman::Model
     end
 
     def folders
-      dc.vm_folders.sort_by{|f| [f.path, f.name]}
+      cache.cache(:folders) do
+        dc.vm_folders.sort_by{|f| [f.path, f.name]}
+      end
     end
 
     def networks(opts = {})
-      name_sort(dc.networks.all(:accessible => true))
+      cache.cache(:networks) do
+        name_sort(dc.networks.all(:accessible => true))
+      end
     end
 
     def resource_pools(opts = {})
       cluster = cluster(opts[:cluster_id])
-      name_sort(cluster.resource_pools.all(:accessible => true))
+      cache.cache(:resource_pools) do
+        name_sort(cluster.resource_pools.all(:accessible => true))
+      end
     end
 
     def available_clusters
-      name_sort(dc.clusters)
+      cache.cache(:clusters) do
+        name_sort(dc.clusters)
+      end
     end
 
     def available_folders
@@ -138,6 +164,14 @@ module Foreman::Model
         "VirtualLsiLogicController" => "LSI Logic Parallel",
         "VirtualLsiLogicSASController" => "LSI Logic SAS",
         "ParaVirtualSCSIController" => "VMware Paravirtual"
+      }
+    end
+
+    def firmware_types
+      {
+        "automatic" => N_("Automatic"),
+        "bios" => N_("BIOS"),
+        "efi" => N_("EFI")
       }
     end
 
@@ -332,6 +366,9 @@ module Foreman::Model
 
       args.except!(:hardware_version) if args[:hardware_version] == 'Default'
 
+      firmware_type = args.delete(:firmware_type)
+      args[:firmware] = firmware_mapping(firmware_type) if args[:firmware] == 'automatic'
+
       args.reject! { |k, v| v.nil? }
       args
     end
@@ -343,9 +380,10 @@ module Foreman::Model
       dc_networks = networks
       args["interfaces_attributes"].each do |key, interface|
         # Convert network id into name
-        net = dc_networks.find { |n| [n.id, n.name].include?(interface["network"]) }
+        net = dc_networks.detect { |n| [n.id, n.name].include?(interface['network']) }
         raise "Unknown Network ID: #{interface['network']}" if net.nil?
         interface["network"] = net.name
+        interface["virtualswitch"] = net.virtualswitch
       end if args["interfaces_attributes"]
       args
     end
@@ -364,7 +402,7 @@ module Foreman::Model
       end
     rescue Fog::Errors::Error => e
       Foreman::Logging.exception("Unhandled VMware error", e)
-      destroy_vm vm.id if vm
+      destroy_vm vm.id if vm && vm.id
       raise e
     end
 
@@ -372,6 +410,26 @@ module Foreman::Model
       args = parse_args args
       opts = vm_instance_defaults.symbolize_keys.merge(args.symbolize_keys).deep_symbolize_keys
       client.servers.new opts
+    end
+
+    def save_vm(uuid, attr)
+      vm = find_vm_by_uuid(uuid)
+      vm.attributes.merge!(attr.deep_symbolize_keys)
+      #volumes are not part of vm.attributes so we have to set them seperately if needed
+      if attr.has_key?(:volumes_attributes)
+        vm.volumes.each do |vm_volume|
+          volume_attrs = attr[:volumes_attributes].values.detect {|vol| vol[:id] == vm_volume.id}
+          vm_volume.size_gb = volume_attrs[:size_gb]
+        end
+      end
+      vm.save
+    end
+
+    def destroy_vm(uuid)
+      find_vm_by_uuid(uuid).destroy :force => true
+    rescue ActiveRecord::RecordNotFound
+      # if the VM does not exists, we don't really care.
+      true
     end
 
     # === Power on
@@ -395,6 +453,8 @@ module Foreman::Model
         "storage_pod" => args[:volumes].first[:storage_pod],
         "resource_pool" => [args[:cluster], args[:resource_pool]]
       }
+
+      opts['transform'] = args[:volumes].first[:thin] == 'true' ? 'sparse' : 'flat' unless args[:volumes].empty?
 
       vm_model = new_vm(raw_args)
       opts['interfaces'] = vm_model.interfaces
@@ -450,7 +510,7 @@ module Foreman::Model
     end
 
     def associated_host(vm)
-      associate_by("mac", vm.mac)
+      associate_by("mac", vm.interfaces.map(&:mac))
     end
 
     def self.provider_friendly_name
@@ -503,8 +563,20 @@ module Foreman::Model
         :volumes    => [new_volume],
         :scsi_controller => { :type => scsi_controller_default_type },
         :datacenter => datacenter,
+        :firmware => 'automatic',
         :boot_order => ['network', 'disk']
       )
+    end
+
+    def firmware_mapping(firmware_type)
+      return 'efi' if firmware_type == :uefi
+      'bios'
+    end
+
+    def set_vm_volumes_attributes(vm, vm_attrs)
+      volumes = vm.volumes || []
+      vm_attrs[:volumes_attributes] = Hash[volumes.each_with_index.map { |volume, idx| [idx.to_s, volume.attributes.merge(:size_gb => volume.size_gb)] }]
+      vm_attrs
     end
   end
 end

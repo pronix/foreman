@@ -144,6 +144,32 @@ class VmwareTest < ActiveSupport::TestCase
       assert_equal attrs_out, @cr.parse_args(attrs_in)
     end
 
+    context 'firmware' do
+      test 'chooses BIOS firmware when firmware type is None and firmware is automatic' do
+        attrs_in = HashWithIndifferentAccess.new(:firmware_type => :none, 'firmware' => 'automatic')
+        attrs_out = {:firmware => "bios"}
+        assert_equal attrs_out, @cr.parse_args(attrs_in)
+      end
+
+      test 'chooses BIOS firmware when firmware type is bios and firmware is automatic' do
+        attrs_in = HashWithIndifferentAccess.new(:firmware_type => :bios, 'firmware' => 'automatic')
+        attrs_out = {:firmware => "bios"}
+        assert_equal attrs_out, @cr.parse_args(attrs_in)
+      end
+
+      test 'chooses EFI firmware when pxe loader is set to UEFI and firmware is automatic' do
+        attrs_in = HashWithIndifferentAccess.new(:firmware_type => :uefi, 'firmware' => 'automatic')
+        attrs_out = {:firmware => "efi"}
+        assert_equal attrs_out, @cr.parse_args(attrs_in)
+      end
+
+      test 'chooses BIOS firmware when no pxe loader is set and firmware is automatic' do
+        attrs_in = HashWithIndifferentAccess.new('firmware' => 'automatic')
+        attrs_out = {:firmware => "bios"}
+        assert_equal attrs_out, @cr.parse_args(attrs_in)
+      end
+    end
+
     test "doesn't modify input hash" do
       # else compute profiles won't save properly
       attrs_in = HashWithIndifferentAccess.new("interfaces_attributes"=>{"0"=>{"network"=>"network-17"}})
@@ -157,6 +183,7 @@ class VmwareTest < ActiveSupport::TestCase
       @mock_network = mock('network')
       @mock_network.stubs('id').returns('network-17')
       @mock_network.stubs('name').returns('Test network')
+      @mock_network.stubs('virtualswitch').returns(nil)
       @cr = FactoryGirl.build(:vmware_cr)
       @cr.stubs(:networks).returns([@mock_network])
     end
@@ -167,12 +194,12 @@ class VmwareTest < ActiveSupport::TestCase
 
     test "converts form network ID to network name" do
       attrs_in = HashWithIndifferentAccess.new("interfaces_attributes"=>{"new_interfaces"=>{"type"=>"VirtualE1000", "network"=>"network-17", "_delete"=>""}, "0"=>{"type"=>"VirtualVmxnet3", "network"=>"network-17", "_delete"=>""}})
-      attrs_out = HashWithIndifferentAccess.new("interfaces_attributes"=>{"new_interfaces"=>{"type"=>"VirtualE1000", "network"=>"Test network", "_delete"=>""}, "0"=>{"type"=>"VirtualVmxnet3", "network"=>"Test network", "_delete"=>""}})
+      attrs_out = HashWithIndifferentAccess.new("interfaces_attributes"=>{"new_interfaces"=>{"type"=>"VirtualE1000", "network"=>"Test network", "virtualswitch" => nil, "_delete"=>""}, "0"=>{"type"=>"VirtualVmxnet3", "network"=>"Test network", "virtualswitch" => nil, "_delete"=>""}})
       assert_equal attrs_out, @cr.parse_networks(attrs_in)
     end
 
     test "ignores existing network names" do
-      attrs = HashWithIndifferentAccess.new("interfaces_attributes"=>{"new_interfaces"=>{"type"=>"VirtualE1000", "network"=>"Test network", "_delete"=>""}, "0"=>{"type"=>"VirtualVmxnet3", "network"=>"Test network", "_delete"=>""}})
+      attrs = HashWithIndifferentAccess.new("interfaces_attributes"=>{"new_interfaces"=>{"type"=>"VirtualE1000", "network"=>"Test network", "virtualswitch" => nil, "_delete"=>""}, "0"=>{"type"=>"VirtualVmxnet3", "network"=>"Test network", "virtualswitch" => nil, "_delete"=>""}})
       assert_equal attrs, @cr.parse_networks(attrs)
     end
 
@@ -184,10 +211,62 @@ class VmwareTest < ActiveSupport::TestCase
     end
   end
 
-  test "#associated_host matches any NIC" do
+  test "#associated_host matches primary NIC" do
     host = FactoryGirl.create(:host, :mac => 'ca:d0:e6:32:16:97')
     cr = FactoryGirl.build(:vmware_cr)
     iface = mock('iface1', :mac => 'ca:d0:e6:32:16:97')
-    assert_equal host, as_admin { cr.associated_host(iface) }
+    vm = mock('vm', :interfaces => [iface])
+    assert_equal host, as_admin { cr.associated_host(vm) }
+  end
+
+  test "#associated_host matches any NIC" do
+    host = FactoryGirl.create(:host, :mac => 'ca:d0:e6:32:16:98')
+    Nic::Base.create! :mac => "ca:d0:e6:32:16:99", :host => host
+    host.reload
+    cr = FactoryGirl.build(:vmware_cr)
+    iface1 = mock('iface1', :mac => 'ca:d0:e6:32:16:98')
+    iface2 = mock('iface1', :mac => 'ca:d0:e6:32:16:99')
+    vm = mock('vm', :interfaces => [iface1, iface2])
+    assert_equal host, as_admin { cr.associated_host(vm) }
+  end
+
+  describe "vm_compute_attributes_for" do
+    before do
+      plain_attrs = {
+        :id => 'abc',
+        :cpus => 5
+      }
+      @vm = mock('vm')
+      @vm.stubs(:attributes).returns(plain_attrs)
+
+      @cr = compute_resources(:vmware)
+      @cr.stubs(:find_vm_by_uuid).returns(@vm)
+
+      vol1 = mock('vol1')
+      vol1.stubs(:attributes).returns({:vol => 1})
+      vol1.stubs(:size_gb).returns(4)
+      vol2 = mock('vol2')
+      vol2.stubs(:attributes).returns({:vol => 2})
+      vol2.stubs(:size_gb).returns(4)
+      @volumes = [
+        vol1,
+        vol2
+      ]
+    end
+
+    test "returns vm attributes without id" do
+      @vm.stubs(:volumes).returns(@volumes)
+
+      expected_attrs = {
+        :cpus => 5,
+        :volumes_attributes => {
+          "0" => { :vol => 1, :size_gb => 4 },
+          "1" => { :vol => 2, :size_gb => 4 }
+        }
+      }
+      attrs = @cr.vm_compute_attributes_for('abc')
+
+      assert_equal expected_attrs, attrs
+    end
   end
 end
